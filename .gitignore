@@ -1,0 +1,33 @@
+# Секреты
+.env
+.env.local
+.env.production
+
+# Зависимости
+node_modules/
+
+# База данных SQLite (все вариации)
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Логи
+*.log
+logs/
+
+# Установочные пакеты
+*.deb
+*.rpm
+*.zip
+*.tar.gz
+
+# IDE / редакторы
+.vscode/
+.idea/
+
+# Системное
+.DS_Store
+Thumbs.db

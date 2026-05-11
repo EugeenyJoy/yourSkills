@@ -1,0 +1,10 @@
+# Не читай эти папки
+node_modules/
+dist/
+build/
+.git/
+__pycache__/
+*.log
+*.lock
+venv/
+.env
