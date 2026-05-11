@@ -53,6 +53,8 @@ const Card = (() => {
           </div>
         </div>
 
+        ${renderUserBadges(user.badges)}
+
         <!-- Прогресс-бар XP -->
         ${renderXPBar(user.overallRankInfo || user)}
 
@@ -115,6 +117,26 @@ const Card = (() => {
             style="width: ${progress}%"
           ></div>
         </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Публичные бейджи пользователя на карточке
+   */
+  function renderUserBadges(badges) {
+    if (!badges || badges.length === 0) return '';
+    return `
+      <div class="card-badges-row">
+        ${badges.map(b => `
+          <div class="card-badge-item" style="
+            background: ${b.color}22;
+            color: ${b.color};
+            border: 1px solid ${b.color}44;
+          ">
+            ${b.icon} ${escapeHtml(b.name)}
+          </div>
+        `).join('')}
       </div>
     `;
   }

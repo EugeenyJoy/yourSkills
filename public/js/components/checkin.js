@@ -485,9 +485,6 @@ const HomePage = (() => {
           <!-- XP прогресс -->
           ${user.overallRankInfo ? Card.renderXPBar(user.overallRankInfo) : ''}
 
-          <!-- Бейджи создателя и др. -->
-          ${renderBadges(user.badges)}
-
           <!-- ===== ЧЕКИН СЕКЦИЯ ===== -->
           ${renderCheckinSection(unchecked, checked, todayData.summary)}
 
@@ -653,21 +650,6 @@ const HomePage = (() => {
             transform: scale(0.97);
             background: var(--bg-elevated);
           }
-          .badges-row {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 16px;
-            flex-wrap: wrap;
-          }
-          .badge-item {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-          }
           .checkin-section {
             background: var(--bg-card);
             border-radius: var(--radius-lg);
@@ -708,23 +690,6 @@ const HomePage = (() => {
     const days = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
     const months = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
     return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`;
-  }
-
-  function renderBadges(badges) {
-    if (!badges || badges.length === 0) return '';
-    return `
-      <div class="badges-row">
-        ${badges.map(b => `
-          <div class="badge-item" style="
-            background: ${b.color}22;
-            color: ${b.color};
-            border: 1px solid ${b.color}44;
-          ">
-            ${b.icon} ${Card.escapeHtml(b.name)}
-          </div>
-        `).join('')}
-      </div>
-    `;
   }
 
   function renderCheckinSection(unchecked, checked, summary) {

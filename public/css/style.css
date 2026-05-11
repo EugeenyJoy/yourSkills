@@ -412,6 +412,21 @@ body {
   color: var(--text-secondary);
 }
 
+.card-badges-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -6px 0 12px;
+}
+
+.card-badge-item {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 999px;
+  line-height: 1;
+}
+
 .card-rank-badge {
   display: flex;
   align-items: center;
