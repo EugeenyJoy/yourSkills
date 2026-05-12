@@ -133,6 +133,15 @@ const API = (() => {
     return request(`/profile/${userId}`, { useCache: true });
   }
 
+  async function updateMyProfile(payload) {
+    const result = await request('/profile/me', {
+      method: 'PUT',
+      body: payload
+    });
+    clearCache('/profile');
+    return result;
+  }
+
   async function follow(userId) {
     const result = await request(`/profile/${userId}/follow`, { method: 'POST' });
     clearCache('/profile');
@@ -317,6 +326,7 @@ const API = (() => {
     // Профиль
     getMyProfile,
     getProfile,
+    updateMyProfile,
     follow,
     unfollow,
     getFollowers,

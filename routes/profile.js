@@ -153,6 +153,46 @@ router.get('/me', (req, res) => {
   }
 });
 
+// ============================================
+// PUT /api/profile/me
+// Редактирование только своего профиля
+// ============================================
+router.put('/me', (req, res) => {
+  try {
+    const firstName = String(req.body.firstName || '').trim();
+    const lastName = String(req.body.lastName || '').trim();
+    const usernameRaw = String(req.body.username || '').trim();
+    const username = usernameRaw.replace(/^@+/, '');
+
+    if (!firstName) {
+      return res.status(400).json({ error: 'Имя не может быть пустым' });
+    }
+
+    if (firstName.length > 64 || lastName.length > 64) {
+      return res.status(400).json({ error: 'Слишком длинное имя' });
+    }
+
+    if (username.length > 64) {
+      return res.status(400).json({ error: 'Слишком длинный username' });
+    }
+
+    db.prepare(`
+      UPDATE users
+      SET first_name = ?, last_name = ?, username = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(firstName, lastName, username, req.userId);
+
+    const data = buildProfile(req.userId, req.userId);
+    res.json({
+      message: 'Профиль обновлён',
+      user: data.user
+    });
+  } catch (error) {
+    console.error('❌ Обновление профиля:', error.message);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
 
 // ============================================
 // GET /api/profile/:userId

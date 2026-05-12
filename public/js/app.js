@@ -84,14 +84,19 @@ const App = (() => {
       return await FeedPage.render();
     }, 'feed');
 
-    // Свой профиль
+    // Настройки
+    Router.addRoute('/settings', async () => {
+      return await SettingsPage.render();
+    }, 'settings');
+
+    // Обратная совместимость старой ссылки
     Router.addRoute('/profile', async () => {
-      return await ProfilePage.render();
-    }, 'profile');
+      return await SettingsPage.render();
+    }, 'settings');
 
     // Чужой профиль
     Router.addRoute('/user/:id', async (params) => {
-      return await ProfilePage.render(params.id);
+      return await UserProfilePage.render(params.id);
     }, null);
 
     // Детали навыка

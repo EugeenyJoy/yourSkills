@@ -433,14 +433,7 @@ const HomePage = (() => {
 
       App.state.user = profileData.user;
 
-      const user = profileData.user;
-      const stats = profileData.stats;
-      const rank = (user.overallRank || 'F').toLowerCase();
       const unchecked = todayData.skills.filter(s => !s.checkedIn);
-      const checked = todayData.skills.filter(s => s.checkedIn);
-
-      // Последние достижения (3 штуки)
-      const recentAchievements = (profileData.achievements || []).slice(0, 3);
 
       // Активные стрики (топ 3)
       const topStreaks = todayData.skills
@@ -450,43 +443,10 @@ const HomePage = (() => {
 
       return `
         <div class="home-page">
-
-          <!-- Приветствие + ранг -->
-          <div class="home-header">
-            <div class="home-greeting">
-              <div class="home-hello">Привет, ${Card.escapeHtml(user.firstName)}! 👋</div>
-              <div class="home-date">${formatDate()}</div>
-            </div>
-            <div class="card-rank-badge rank-${rank}" style="width:48px;height:48px;font-size:24px;">
-              ${user.overallRank || 'F'}
-            </div>
-          </div>
-
-          <!-- Быстрая статистика -->
-          <div class="home-stats-row">
-            <div class="home-stat-card">
-              <div class="home-stat-value">${App.formatNumber(user.overallXP || 0)}</div>
-              <div class="home-stat-label">XP</div>
-            </div>
-            <div class="home-stat-card">
-              <div class="home-stat-value">${stats?.totalSkills || 0}</div>
-              <div class="home-stat-label">Навыки</div>
-            </div>
-            <div class="home-stat-card">
-              <div class="home-stat-value">${topStreaks.length > 0 ? '🔥' : '—'}</div>
-              <div class="home-stat-label">${topStreaks.length} стриков</div>
-            </div>
-            <div class="home-stat-card">
-              <div class="home-stat-value">${profileData.achievements?.length || 0}</div>
-              <div class="home-stat-label">Ачивки</div>
-            </div>
-          </div>
-
-          <!-- XP прогресс -->
-          ${user.overallRankInfo ? Card.renderXPBar(user.overallRankInfo) : ''}
+          ${Card.renderFull(profileData)}
 
           <!-- ===== ЧЕКИН СЕКЦИЯ ===== -->
-          ${renderCheckinSection(unchecked, checked, todayData.summary)}
+          ${renderCheckinSection(unchecked, todayData.summary)}
 
           <!-- ===== АКТИВНЫЕ СТРИКИ ===== -->
           ${topStreaks.length > 0 ? `
@@ -500,24 +460,6 @@ const HomePage = (() => {
                     <div class="streak-card-fire">🔥${s.streak}</div>
                     <div class="streak-card-name">${Card.escapeHtml(s.name)}</div>
                     <div class="streak-card-mult">x${s.multiplier}</div>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          ` : ''}
-
-          <!-- ===== ПОСЛЕДНИЕ ДОСТИЖЕНИЯ ===== -->
-          ${recentAchievements.length > 0 ? `
-            <div class="section">
-              <div class="section-header">
-                <span class="section-title">🏆 Последние достижения</span>
-                <span class="section-action" data-link href="/profile">Все →</span>
-              </div>
-              <div class="achievements-row">
-                ${recentAchievements.map(a => `
-                  <div class="achievement-card">
-                    <div class="achievement-card-icon">${a.icon}</div>
-                    <div class="achievement-card-name">${Card.escapeHtml(a.name)}</div>
                   </div>
                 `).join('')}
               </div>
@@ -539,43 +481,7 @@ const HomePage = (() => {
         </div>
 
         <style>
-          .home-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 16px;
-          }
-          .home-hello {
-            font-size: 22px;
-            font-weight: 700;
-          }
-          .home-date {
-            font-size: 13px;
-            color: var(--text-secondary);
-            margin-top: 2px;
-          }
-          .home-stats-row {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 8px;
-            margin-bottom: 16px;
-          }
-          .home-stat-card {
-            background: var(--bg-card);
-            border-radius: var(--radius-md);
-            padding: 12px 8px;
-            text-align: center;
-          }
-          .home-stat-value {
-            font-size: 18px;
-            font-weight: 700;
-          }
-          .home-stat-label {
-            font-size: 11px;
-            color: var(--text-muted);
-            margin-top: 2px;
-          }
-          .streaks-row, .achievements-row {
+          .streaks-row {
             display: flex;
             gap: 8px;
             overflow-x: auto;
@@ -608,22 +514,6 @@ const HomePage = (() => {
             color: var(--accent-light);
             font-weight: 600;
             margin-top: 2px;
-          }
-          .achievement-card {
-            flex-shrink: 0;
-            background: var(--bg-card);
-            border-radius: var(--radius-md);
-            padding: 12px;
-            text-align: center;
-            min-width: 90px;
-          }
-          .achievement-card-icon {
-            font-size: 28px;
-          }
-          .achievement-card-name {
-            font-size: 11px;
-            color: var(--text-secondary);
-            margin-top: 4px;
           }
           .home-actions {
             display: grid;
@@ -685,14 +575,7 @@ const HomePage = (() => {
     }
   }
 
-  function formatDate() {
-    const d = new Date();
-    const days = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
-    const months = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
-    return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`;
-  }
-
-  function renderCheckinSection(unchecked, checked, summary) {
+  function renderCheckinSection(unchecked, summary) {
     if (summary.total === 0) {
       return `
         <div class="checkin-section">

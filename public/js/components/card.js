@@ -152,7 +152,7 @@ const Card = (() => {
       <div class="profile-actions" style="display: flex; gap: 8px; margin-bottom: 16px;">
         <button
           class="btn ${isFollowing ? 'btn-secondary' : 'btn-primary'} btn-full"
-          onclick="ProfilePage.toggleFollow(${user.id}, ${isFollowing})"
+          onclick="UserProfilePage.toggleFollow(${user.id}, ${isFollowing})"
         >
           ${isFollowing ? '✓ Вы подписаны' : '+ Подписаться'}
         </button>

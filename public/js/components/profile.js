@@ -1,32 +1,40 @@
 // ============================================
-// profile.js — Страница профиля
-// ============================================
-// Показывает свой или чужой профиль.
-// Для своего — кнопка "Добавить навык"
-// Для чужого — кнопка "Подписаться" + подтверждения
+// profile.js — Настройки и публичные профили
 // ============================================
 
-const ProfilePage = (() => {
+const AccountPage = (() => {
 
   /**
-   * Рендер профиля
+   * Рендер своего экрана настроек
    *
-   * @param {number|null} userId — null = свой профиль
+   * @returns {Promise<string>}
    */
-  async function render(userId = null) {
+  async function renderSettings() {
     try {
-      let data;
+      Router.updateBackButton();
+      const data = await API.getMyProfile();
+      return renderSettingsPage(data);
+    } catch (error) {
+      console.error('❌ Ошибка настроек:', error);
+      return `
+        <div class="empty-state">
+          <div class="empty-icon">😔</div>
+          <div class="empty-title">Ошибка загрузки настроек</div>
+          <div class="empty-text">${Card.escapeHtml(error.message)}</div>
+          <button class="btn btn-primary" data-link href="/">
+            На главную
+          </button>
+        </div>
+      `;
+    }
+  }
 
-      if (userId && parseInt(userId) !== App.state.user?.id) {
-        // Чужой профиль
-        data = await API.getProfile(userId);
-      } else {
-        // Свой профиль
-        data = await API.getMyProfile();
-        data.user.isOwn = true;
-      }
-
-      // Обновляем кнопку "Назад" в Telegram
+  /**
+   * Рендер чужого публичного профиля
+   */
+  async function renderUserProfile(userId) {
+    try {
+      const data = await API.getProfile(userId);
       Router.updateBackButton();
 
       return `
@@ -65,6 +73,128 @@ const ProfilePage = (() => {
     }
   }
 
+  function renderSettingsPage(data) {
+    const user = data.user || {};
+    const badges = Array.isArray(user.badges) ? user.badges : [];
+    const safeFirstName = Card.escapeHtml(user.firstName || '');
+    const safeLastName = Card.escapeHtml(user.lastName || '');
+    const safeUsername = Card.escapeHtml(user.username || '');
+
+    return `
+      <div class="settings-page">
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">⚙️ Настройки</span>
+          </div>
+
+          <div style="display: grid; gap: 10px;">
+            <label style="display: grid; gap: 6px;">
+              <span style="font-size: 13px; color: var(--text-secondary);">Имя</span>
+              <input id="settings-first-name" type="text" maxlength="64" value="${safeFirstName}" style="
+                width: 100%;
+                padding: 10px 12px;
+                border-radius: 10px;
+                border: 1px solid rgba(255,255,255,0.12);
+                background: var(--bg-elevated);
+                color: var(--text-primary);
+                font-size: 14px;
+              ">
+            </label>
+
+            <label style="display: grid; gap: 6px;">
+              <span style="font-size: 13px; color: var(--text-secondary);">Фамилия</span>
+              <input id="settings-last-name" type="text" maxlength="64" value="${safeLastName}" style="
+                width: 100%;
+                padding: 10px 12px;
+                border-radius: 10px;
+                border: 1px solid rgba(255,255,255,0.12);
+                background: var(--bg-elevated);
+                color: var(--text-primary);
+                font-size: 14px;
+              ">
+            </label>
+
+            <label style="display: grid; gap: 6px;">
+              <span style="font-size: 13px; color: var(--text-secondary);">Username</span>
+              <input id="settings-username" type="text" maxlength="64" placeholder="username" value="${safeUsername}" style="
+                width: 100%;
+                padding: 10px 12px;
+                border-radius: 10px;
+                border: 1px solid rgba(255,255,255,0.12);
+                background: var(--bg-elevated);
+                color: var(--text-primary);
+                font-size: 14px;
+              ">
+            </label>
+
+            <button class="btn btn-primary" onclick="SettingsPage.saveMyProfile()">
+              💾 Сохранить профиль
+            </button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">🏷️ Мои бейджи</span>
+            <span class="section-action">${badges.length}</span>
+          </div>
+          ${badges.length === 0
+            ? `
+              <div style="color: var(--text-secondary); font-size: 14px;">
+                Пока нет бейджей.
+              </div>
+            `
+            : `
+              <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                ${badges.map(b => `
+                  <div style="
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    padding: 8px 10px;
+                    border-radius: 999px;
+                    border: 1px solid ${(b.color || '#888')}55;
+                    background: ${(b.color || '#888')}22;
+                    color: ${(b.color || '#888')};
+                    font-size: 13px;
+                    font-weight: 600;
+                  ">
+                    <span>${b.icon || '🏷️'}</span>
+                    <span>${Card.escapeHtml(b.name || b.code || 'Badge')}</span>
+                  </div>
+                `).join('')}
+              </div>
+            `
+          }
+        </div>
+      </div>
+    `;
+  }
+
+  async function saveMyProfile() {
+    try {
+      const firstNameEl = document.getElementById('settings-first-name');
+      const lastNameEl = document.getElementById('settings-last-name');
+      const usernameEl = document.getElementById('settings-username');
+
+      const firstName = (firstNameEl?.value || '').trim();
+      const lastName = (lastNameEl?.value || '').trim();
+      const username = (usernameEl?.value || '').trim().replace(/^@+/, '');
+
+      if (!firstName) {
+        App.showToast('Имя не может быть пустым', '⚠️');
+        return;
+      }
+
+      const result = await API.updateMyProfile({ firstName, lastName, username });
+      await App.refreshProfile();
+      App.state.user = { ...(App.state.user || {}), ...result.user };
+      App.showToast(result.message || 'Сохранено', '✅');
+    } catch (error) {
+      App.showToast(error.message || 'Ошибка сохранения', '❌');
+    }
+  }
+
 
   /**
    * Подписаться / отписаться
@@ -90,7 +220,7 @@ const ProfilePage = (() => {
       App.showToast(result.message, isFollowing ? '👋' : '✅');
 
       // Перерисовываем страницу
-      const html = await render(userId);
+      const html = await renderUserProfile(userId);
       document.getElementById('content').innerHTML = html;
 
     } catch (error) {
@@ -198,7 +328,9 @@ const ProfilePage = (() => {
   // ==========================================
 
   return {
-    render,
+    renderSettings,
+    renderUserProfile,
+    saveMyProfile,
     toggleFollow,
     showFollowers,
     showFollowing,
@@ -206,6 +338,19 @@ const ProfilePage = (() => {
   };
 
 })();
+
+const SettingsPage = {
+  render: () => AccountPage.renderSettings(),
+  saveMyProfile: (...args) => AccountPage.saveMyProfile(...args)
+};
+
+const UserProfilePage = {
+  render: (userId) => AccountPage.renderUserProfile(userId),
+  toggleFollow: (...args) => AccountPage.toggleFollow(...args),
+  showFollowers: (...args) => AccountPage.showFollowers(...args),
+  showFollowing: (...args) => AccountPage.showFollowing(...args),
+  endorseSkill: (...args) => AccountPage.endorseSkill(...args)
+};
 
 
 // ============================================

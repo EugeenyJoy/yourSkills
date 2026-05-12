@@ -40,7 +40,7 @@ const Router = (() => {
   /**
    * Добавить маршрут
    *
-   * @param {string} path — путь ("/profile", "/user/:id")
+   * @param {string} path — путь ("/settings", "/user/:id")
    * @param {function} handler — функция(params) → HTML или Promise<HTML>
    * @param {string} tab — ID вкладки для подсветки
    *
