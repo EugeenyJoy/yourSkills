@@ -15,6 +15,7 @@ require('dotenv').config();
 
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
 
 // Инициализация базы данных (создаст таблицы при первом запуске)
@@ -22,7 +23,7 @@ const db = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
+console.log('🔍 NODE_ENV =', JSON.stringify(process.env.NODE_ENV));
 
 // ============================================
 // БЕЗОПАСНОСТЬ: Заголовки ответов
@@ -223,6 +224,18 @@ app.use((req, res, next) => {
  * @returns {object|null} — данные пользователя или null если подпись невалидна
  */
 function validateTelegramData(initData) {
+  // ============================================
+  // DEV: возвращаем мок-пользователя без проверки подписи
+  // ============================================
+  if (process.env.NODE_ENV === 'development') {
+    return {
+      id: parseInt(process.env.CREATOR_ID) || 518552670,
+      first_name: 'Dev',
+      username: 'devuser',
+      language_code: 'ru'
+    };
+  }
+
   try {
     // initData — это URL-encoded строка вида:
     // user={...}&auth_date=123&hash=abc...
@@ -292,22 +305,38 @@ app.validateTelegramData = validateTelegramData;
 // ============================================
 
 function authMiddleware(req, res, next) {
-  // Telegram initData приходит в заголовке
+  // ============================================
+  // DEV: пропускаем без Telegram авторизации
+  // ============================================
+  if (process.env.NODE_ENV === 'development') {
+    if (!process.env.CREATOR_ID) {
+      console.warn('⚠️ CREATOR_ID не задан в .env — dev-bypass невозможен');
+      return res.status(500).json({ error: 'Dev mode требует CREATOR_ID в .env' });
+    }
+    req.user = {
+      id: parseInt(process.env.CREATOR_ID),
+      first_name: 'Dev',
+      username: 'devuser',
+      language_code: 'ru'
+    };
+    return next();
+  }
+
+  // ============================================
+  // PROD: обычная проверка Telegram initData
+  // ============================================
   const initData = req.headers['x-telegram-init-data'];
 
   if (!initData) {
     return res.status(401).json({ error: 'Требуется авторизация через Telegram' });
   }
 
-  // Валидируем подпись
   const user = validateTelegramData(initData);
 
   if (!user) {
     return res.status(403).json({ error: 'Невалидные данные авторизации' });
   }
 
-  // Прикрепляем пользователя к запросу
-  // Дальше в маршрутах доступен как req.user
   req.user = user;
   next();
 }
@@ -315,6 +344,22 @@ function authMiddleware(req, res, next) {
 // Делаем доступным для маршрутов
 app.authMiddleware = authMiddleware;
 
+// ============================================
+// DEV: инжектим мок Telegram WebApp в index.html
+// ============================================
+if (process.env.NODE_ENV === 'development') {
+  app.get(['/', '/index.html'], (req, res, next) => {
+    const file = path.join(__dirname, 'public', 'index.html');
+    fs.readFile(file, 'utf8', (err, html) => {
+      if (err) return next();
+      const injected = html.replace(
+        '</head>',
+        '  <script src="/js/dev-mock.js"></script>\n</head>'
+      );
+      res.type('html').send(injected);
+    });
+  });
+}
 
 // ============================================
 // СТАТИЧЕСКИЕ ФАЙЛЫ

@@ -62,12 +62,13 @@ router.post('/login', (req, res) => {
   try {
     const { initData } = req.body;
 
-    if (!initData) {
+    // В DEV пропускаем без initData
+    if (!initData && process.env.NODE_ENV !== 'development') {
       return res.status(400).json({ error: 'initData обязателен' });
     }
 
     // Валидируем данные Telegram
-    const tgUser = req.app.validateTelegramData(initData);
+    const tgUser = req.app.validateTelegramData(initData || '');
     if (!tgUser) {
       return res.status(403).json({ error: 'Невалидные данные Telegram' });
     }

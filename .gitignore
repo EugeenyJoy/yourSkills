@@ -31,3 +31,4 @@ logs/
 # Системное
 .DS_Store
 Thumbs.db
+public/js/dev-mock.js
