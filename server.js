@@ -12,6 +12,8 @@
 // ВАЖНО: это должно быть ПЕРВОЙ строкой,
 // чтобы все модули ниже видели process.env
 require('dotenv').config();
+console.log('🔧 NODE_ENV:', process.env.NODE_ENV);
+console.log('🔧 CREATOR_ID:', process.env.CREATOR_ID);
 
 const express = require('express');
 const path = require('path');
@@ -23,7 +25,6 @@ const db = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-console.log('🔍 NODE_ENV =', JSON.stringify(process.env.NODE_ENV));
 
 // ============================================
 // БЕЗОПАСНОСТЬ: Заголовки ответов
@@ -296,53 +297,6 @@ function validateTelegramData(initData) {
 // Делаем доступной для маршрутов
 app.validateTelegramData = validateTelegramData;
 
-
-// ============================================
-// БЕЗОПАСНОСТЬ: Middleware авторизации
-// ============================================
-// Проверяет что запрос от авторизованного пользователя.
-// Добавляет req.user с данными из Telegram.
-// ============================================
-
-function authMiddleware(req, res, next) {
-  // ============================================
-  // DEV: пропускаем без Telegram авторизации
-  // ============================================
-  if (process.env.NODE_ENV === 'development') {
-    if (!process.env.CREATOR_ID) {
-      console.warn('⚠️ CREATOR_ID не задан в .env — dev-bypass невозможен');
-      return res.status(500).json({ error: 'Dev mode требует CREATOR_ID в .env' });
-    }
-    req.user = {
-      id: parseInt(process.env.CREATOR_ID),
-      first_name: 'Dev',
-      username: 'devuser',
-      language_code: 'ru'
-    };
-    return next();
-  }
-
-  // ============================================
-  // PROD: обычная проверка Telegram initData
-  // ============================================
-  const initData = req.headers['x-telegram-init-data'];
-
-  if (!initData) {
-    return res.status(401).json({ error: 'Требуется авторизация через Telegram' });
-  }
-
-  const user = validateTelegramData(initData);
-
-  if (!user) {
-    return res.status(403).json({ error: 'Невалидные данные авторизации' });
-  }
-
-  req.user = user;
-  next();
-}
-
-// Делаем доступным для маршрутов
-app.authMiddleware = authMiddleware;
 
 // ============================================
 // DEV: инжектим мок Telegram WebApp в index.html

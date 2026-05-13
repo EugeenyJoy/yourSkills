@@ -566,6 +566,13 @@ setInterval(() => {
 bot.on('polling_error', (error) => {
   // Игнорируем ETIMEOUT — это нормально для polling
   if (error.code === 'ETIMEOUT') return;
+  if (
+    process.env.NODE_ENV === 'development' &&
+    error.code === 'ETELEGRAM' &&
+    error.message?.includes('404 Not Found')
+  ) {
+    return;
+  }
   console.error('❌ Ошибка polling бота:', error.message);
 });
 

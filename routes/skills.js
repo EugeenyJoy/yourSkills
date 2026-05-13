@@ -9,6 +9,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../database');
+const authMiddleware = require('../middleware/auth');
 
 
 // ============================================
@@ -553,16 +554,7 @@ function addBadge(userId, badge) {
 // MIDDLEWARE — авторизация
 // ============================================
 
-router.use((req, res, next) => {
-  const initData = req.headers['x-telegram-init-data'];
-  if (!initData) return res.status(401).json({ error: 'Требуется авторизация' });
-
-  const user = req.app.validateTelegramData(initData);
-  if (!user) return res.status(403).json({ error: 'Невалидные данные' });
-
-  req.userId = user.id;
-  next();
-});
+router.use(authMiddleware);
 
 
 // ============================================
