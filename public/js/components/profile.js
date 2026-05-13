@@ -167,6 +167,30 @@ const AccountPage = (() => {
             `
           }
         </div>
+
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">🛡️ Управление профилем</span>
+          </div>
+
+          <div style="
+            color: var(--text-secondary);
+            font-size: 13px;
+            line-height: 1.4;
+            margin-bottom: 12px;
+          ">
+            Telegram-аккаунт не удаляется. Действия ниже работают только с данными в приложении yourSkills.
+          </div>
+
+          <div style="display: grid; gap: 8px;">
+            <button class="btn btn-secondary btn-full" onclick="SettingsPage.confirmResetProfile()">
+              ♻️ Сбросить прогресс профиля
+            </button>
+            <button class="btn btn-danger btn-full" onclick="SettingsPage.confirmDeleteProfile()">
+              🗑 Удалить профиль из приложения
+            </button>
+          </div>
+        </div>
       </div>
     `;
   }
@@ -192,6 +216,40 @@ const AccountPage = (() => {
       App.showToast(result.message || 'Сохранено', '✅');
     } catch (error) {
       App.showToast(error.message || 'Ошибка сохранения', '❌');
+    }
+  }
+
+  async function confirmResetProfile() {
+    const ok = window.confirm(
+      'Сбросить прогресс профиля?\n\nБудут удалены навыки, чекины, достижения, подписки и XP в приложении. Telegram-аккаунт не затронется.'
+    );
+    if (!ok) return;
+
+    try {
+      const result = await API.resetMyProfile();
+      await App.refreshProfile();
+      App.showToast(result.message || 'Профиль сброшен', '♻️');
+      Router.navigate('/', false);
+    } catch (error) {
+      App.showToast(error.message || 'Ошибка сброса', '❌');
+    }
+  }
+
+  async function confirmDeleteProfile() {
+    const ok = window.confirm(
+      'Удалить профиль из приложения?\n\nЭто удалит все ваши данные в yourSkills. Telegram-аккаунт не удаляется.'
+    );
+    if (!ok) return;
+
+    try {
+      const result = await API.deleteMyProfile();
+      App.showToast(result.message || 'Профиль удалён', '🗑');
+      API.clearCache();
+      await API.login();
+      await App.refreshProfile();
+      Router.navigate('/', false);
+    } catch (error) {
+      App.showToast(error.message || 'Ошибка удаления', '❌');
     }
   }
 
@@ -334,14 +392,18 @@ const AccountPage = (() => {
     toggleFollow,
     showFollowers,
     showFollowing,
-    endorseSkill
+    endorseSkill,
+    confirmResetProfile,
+    confirmDeleteProfile
   };
 
 })();
 
 const SettingsPage = {
   render: () => AccountPage.renderSettings(),
-  saveMyProfile: (...args) => AccountPage.saveMyProfile(...args)
+  saveMyProfile: (...args) => AccountPage.saveMyProfile(...args),
+  confirmResetProfile: (...args) => AccountPage.confirmResetProfile(...args),
+  confirmDeleteProfile: (...args) => AccountPage.confirmDeleteProfile(...args)
 };
 
 const UserProfilePage = {

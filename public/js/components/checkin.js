@@ -443,7 +443,10 @@ const HomePage = (() => {
 
       return `
         <div class="home-page">
-          ${Card.renderFull(profileData)}
+          ${Card.renderFull(profileData, {
+            collapseAchievements: true,
+            dedupeAchievements: true
+          })}
 
           <!-- ===== ЧЕКИН СЕКЦИЯ ===== -->
           ${renderCheckinSection(unchecked, todayData.summary)}
@@ -465,18 +468,6 @@ const HomePage = (() => {
               </div>
             </div>
           ` : ''}
-
-          <!-- ===== БЫСТРЫЕ ССЫЛКИ ===== -->
-          <div class="home-actions">
-            <button class="home-action-btn" data-link href="/search">
-              <span>🔍</span>
-              <span>Найти людей</span>
-            </button>
-            <button class="home-action-btn" data-link href="/feed">
-              <span>📢</span>
-              <span>Лента</span>
-            </button>
-          </div>
 
         </div>
 
@@ -514,31 +505,6 @@ const HomePage = (() => {
             color: var(--accent-light);
             font-weight: 600;
             margin-top: 2px;
-          }
-          .home-actions {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            margin-top: 8px;
-          }
-          .home-action-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            padding: 14px;
-            background: var(--bg-card);
-            border: 1px solid rgba(255,255,255,0.06);
-            border-radius: var(--radius-md);
-            color: var(--text-primary);
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all var(--transition-fast);
-          }
-          .home-action-btn:active {
-            transform: scale(0.97);
-            background: var(--bg-elevated);
           }
           .checkin-section {
             background: var(--bg-card);

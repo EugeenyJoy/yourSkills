@@ -24,7 +24,7 @@ const Card = (() => {
    * @param {array} data.categories — категории с навыками
    * @returns {string} — HTML
    */
-  function renderFull(data) {
+  function renderFull(data, options = {}) {
     const { user, social, stats, categories, achievements } = data;
     const rank = (user.overallRank || 'E').toLowerCase();
     const avatarUrl = App.getAvatarUrl(user);
@@ -64,17 +64,25 @@ const Card = (() => {
             <div class="card-stat-value">${App.formatNumber(stats?.totalSkills || 0)}</div>
             <div class="card-stat-label">Навыки</div>
           </div>
-          <div class="card-stat">
+          <div
+            class="card-stat"
+            style="cursor: pointer;"
+            onclick="UserProfilePage.showFollowers(${user.id})"
+          >
             <div class="card-stat-value">${App.formatNumber(social?.followers || 0)}</div>
             <div class="card-stat-label">Подписчики</div>
+          </div>
+          <div
+            class="card-stat"
+            style="cursor: pointer;"
+            onclick="UserProfilePage.showFollowing(${user.id})"
+          >
+            <div class="card-stat-value">${App.formatNumber(social?.following || 0)}</div>
+            <div class="card-stat-label">Подписки</div>
           </div>
           <div class="card-stat">
             <div class="card-stat-value">${App.formatNumber(stats?.receivedEndorsements || 0)}</div>
             <div class="card-stat-label">Подтверждения</div>
-          </div>
-          <div class="card-stat">
-            <div class="card-stat-value">${App.formatNumber(user.overallXP || 0)}</div>
-            <div class="card-stat-label">XP</div>
           </div>
         </div>
       </div>
@@ -87,7 +95,7 @@ const Card = (() => {
 
       <!-- ======== ДОСТИЖЕНИЯ ======== -->
       ${achievements && achievements.length > 0
-        ? renderAchievementsSection(achievements)
+        ? renderAchievementsSection(achievements, options)
         : ''
       }
     `;
@@ -146,6 +154,10 @@ const Card = (() => {
    * Кнопки подписки / подтверждения на чужом профиле
    */
   function renderProfileActions(user, social) {
+    if (user?.isOwn || (App.state.user && user?.id === App.state.user.id)) {
+      return '';
+    }
+
     const isFollowing = social?.isFollowing;
 
     return `
@@ -250,22 +262,116 @@ const Card = (() => {
   /**
    * Секция достижений
    */
-  function renderAchievementsSection(achievements) {
-    return `
-      <div class="section">
-        <div class="section-header">
-          <span class="section-title">🏆 Достижения</span>
-          <span class="section-action">${achievements.length}</span>
+  function renderAchievementsSection(achievements, options = {}) {
+    const collapse = Boolean(options.collapseAchievements);
+    const dedupe = Boolean(options.dedupeAchievements);
+
+    const groupedAchievements = dedupe
+      ? Array.from(
+          achievements.reduce((map, a) => {
+            const key = a.id != null
+              ? `id:${a.id}`
+              : `${a.icon || ''}|${a.name || ''}|${a.description || ''}`;
+
+            if (!map.has(key)) {
+              map.set(key, { achievement: a, count: 1 });
+            } else {
+              map.get(key).count += 1;
+            }
+            return map;
+          }, new Map()).values()
+        )
+      : achievements.map(a => ({ achievement: a, count: 1 }));
+
+    const headerCount = dedupe ? groupedAchievements.length : achievements.length;
+    const previewHtml = collapse
+      ? `
+        <div class="achievement-preview-wrap">
+          <div class="achievement-grid achievement-grid-preview">
+            ${groupedAchievements.slice(0, 4).map(({ achievement, count }) => `
+              <div class="achievement-item" title="${escapeHtml(achievement.description)}">
+                <div class="achievement-icon">${achievement.icon}</div>
+                <div class="achievement-name">${escapeHtml(achievement.name)}</div>
+                ${count > 1
+                  ? `<div style="margin-top: 4px; font-size: 11px; color: var(--text-secondary);">x${count}</div>`
+                  : ''
+                }
+              </div>
+            `).join('')}
+          </div>
         </div>
-        <div class="achievement-grid">
-          ${achievements.map(a => `
-            <div class="achievement-item" title="${escapeHtml(a.description)}">
-              <div class="achievement-icon">${a.icon}</div>
-              <div class="achievement-name">${escapeHtml(a.name)}</div>
-            </div>
-          `).join('')}
-        </div>
+      `
+      : '';
+
+    const summaryText = collapse
+      ? `<summary class="achievement-summary">
+           <div class="section-header">
+             <span class="section-title">🏆 Достижения</span>
+             <span style="display:flex; align-items:center; gap:8px;">
+               <span class="section-action">${headerCount}</span>
+               <span class="achievement-chevron">▾</span>
+             </span>
+           </div>
+           ${previewHtml}
+         </summary>`
+      : `<div class="section-header">
+           <span class="section-title">🏆 Достижения</span>
+           <span class="section-action">${headerCount}</span>
+         </div>`;
+
+    const gridHtml = `
+      <div class="achievement-grid">
+        ${groupedAchievements.map(({ achievement, count }) => `
+          <div class="achievement-item" title="${escapeHtml(achievement.description)}">
+            <div class="achievement-icon">${achievement.icon}</div>
+            <div class="achievement-name">${escapeHtml(achievement.name)}</div>
+            ${count > 1
+              ? `<div style="margin-top: 4px; font-size: 11px; color: var(--text-secondary);">x${count}</div>`
+              : ''
+            }
+          </div>
+        `).join('')}
       </div>
+    `;
+
+    return `
+      <${collapse ? 'details' : 'div'} class="section ${collapse ? 'achievement-collapsible' : ''}">
+        ${summaryText}
+        ${gridHtml}
+      </${collapse ? 'details' : 'div'}>
+      ${collapse ? `
+        <style>
+          .achievement-collapsible .achievement-summary {
+            cursor: pointer;
+            list-style: none;
+            display: block;
+          }
+          .achievement-collapsible .achievement-summary::-webkit-details-marker {
+            display: none;
+          }
+          .achievement-collapsible .achievement-chevron {
+            transition: transform var(--transition-fast);
+            color: var(--text-secondary);
+            font-size: 14px;
+          }
+          .achievement-collapsible[open] .achievement-chevron {
+            transform: rotate(180deg);
+          }
+          .achievement-collapsible .achievement-preview-wrap {
+            position: relative;
+            margin-top: 8px;
+          }
+          .achievement-collapsible[open] .achievement-preview-wrap {
+            display: none;
+          }
+          .achievement-collapsible .achievement-grid {
+            margin-top: 8px;
+          }
+          .achievement-collapsible:not([open]) > .achievement-grid {
+            display: none;
+          }
+        </style>
+      ` : ''}
     `;
   }
 

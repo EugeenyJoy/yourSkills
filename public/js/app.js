@@ -362,8 +362,8 @@ const App = (() => {
     // 5. Показываем приложение
     showApp();
 
-    // 6. Переходим на главную
-    Router.navigate('/');
+    // 6. Переходим на главную (pushState=false чтобы принудительно отрисовать первый экран)
+    Router.navigate('/', false);
 
     console.log('✅ yourSkills готов');
   }

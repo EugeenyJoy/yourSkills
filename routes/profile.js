@@ -185,6 +185,93 @@ router.put('/me', (req, res) => {
   }
 });
 
+// ============================================
+// POST /api/profile/me/reset
+// Сброс прогресса профиля (без удаления пользователя)
+// ============================================
+router.post('/me/reset', (req, res) => {
+  try {
+    const userId = req.userId;
+
+    const tx = db.transaction(() => {
+      const ownEventIds = db.prepare(
+        'SELECT id FROM feed_events WHERE user_id = ?'
+      ).all(userId).map(r => r.id);
+
+      if (ownEventIds.length > 0) {
+        const placeholders = ownEventIds.map(() => '?').join(',');
+        db.prepare(`DELETE FROM feed_reactions WHERE event_id IN (${placeholders})`).run(...ownEventIds);
+      }
+
+      db.prepare('DELETE FROM feed_reactions WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM feed_events WHERE user_id = ?').run(userId);
+
+      db.prepare('DELETE FROM endorsements WHERE from_user_id = ? OR to_user_id = ?')
+        .run(userId, userId);
+      db.prepare('DELETE FROM checkins WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM user_achievements WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM user_skills WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM follows WHERE follower_id = ? OR following_id = ?')
+        .run(userId, userId);
+
+      db.prepare(`
+        UPDATE users
+        SET overall_rank = 'F',
+            overall_xp = 0,
+            badges = '[]',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(userId);
+    });
+
+    tx();
+
+    res.json({ message: 'Профиль сброшен' });
+  } catch (error) {
+    console.error('❌ Сброс профиля:', error.message);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// ============================================
+// DELETE /api/profile/me
+// Полное удаление профиля из приложения
+// ============================================
+router.delete('/me', (req, res) => {
+  try {
+    const userId = req.userId;
+
+    const tx = db.transaction(() => {
+      const ownEventIds = db.prepare(
+        'SELECT id FROM feed_events WHERE user_id = ?'
+      ).all(userId).map(r => r.id);
+
+      if (ownEventIds.length > 0) {
+        const placeholders = ownEventIds.map(() => '?').join(',');
+        db.prepare(`DELETE FROM feed_reactions WHERE event_id IN (${placeholders})`).run(...ownEventIds);
+      }
+
+      db.prepare('DELETE FROM feed_reactions WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM feed_events WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM endorsements WHERE from_user_id = ? OR to_user_id = ?')
+        .run(userId, userId);
+      db.prepare('DELETE FROM checkins WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM user_achievements WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM user_skills WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM follows WHERE follower_id = ? OR following_id = ?')
+        .run(userId, userId);
+      db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+    });
+
+    tx();
+
+    res.json({ message: 'Профиль удалён' });
+  } catch (error) {
+    console.error('❌ Удаление профиля:', error.message);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
 
 // ============================================
 // GET /api/profile/:userId

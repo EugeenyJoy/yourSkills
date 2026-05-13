@@ -178,6 +178,18 @@ const API = (() => {
     return request(`/profile/top/users?${params}`, { useCache: true });
   }
 
+  async function resetMyProfile() {
+    const result = await request('/profile/me/reset', { method: 'POST' });
+    clearCache();
+    return result;
+  }
+
+  async function deleteMyProfile() {
+    const result = await request('/profile/me', { method: 'DELETE' });
+    clearCache();
+    return result;
+  }
+
   // ==========================================
   // НАВЫКИ
   // ==========================================
@@ -333,6 +345,8 @@ const API = (() => {
     getFollowing,
     searchUsers,
     getTopUsers,
+    resetMyProfile,
+    deleteMyProfile,
 
     // Навыки
     getCatalog,

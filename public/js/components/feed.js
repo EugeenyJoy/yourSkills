@@ -16,7 +16,7 @@
 const FeedPage = (() => {
 
   // Текущий режим ленты
-  let currentTab = 'personal';
+  let currentTab = 'global';
 
   // Текущая страница (для подгрузки)
   let currentPage = 0;
@@ -26,38 +26,80 @@ const FeedPage = (() => {
    * Рендер страницы ленты
    */
   async function render() {
+    currentTab = 'global';
     currentPage = 0;
 
     return `
       <div class="feed-page">
 
         <!-- Переключатель -->
-        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+        <div class="feed-tabs">
           <button
-            class="search-tab-btn active"
-            id="feed-tab-personal"
-            onclick="FeedPage.switchTab('personal')"
-          >
-            👥 Подписки
-          </button>
-          <button
-            class="search-tab-btn"
+            class="feed-tab-btn active"
             id="feed-tab-global"
             onclick="FeedPage.switchTab('global')"
           >
             🌍 Все
           </button>
+          <button
+            class="feed-tab-btn"
+            id="feed-tab-personal"
+            onclick="FeedPage.switchTab('personal')"
+          >
+            👥 Подписки
+          </button>
         </div>
 
         <!-- Список событий -->
         <div id="feed-list">
-          ${await renderFeedContent('personal', 0)}
+          ${await renderFeedContent('global', 0)}
         </div>
 
       </div>
 
       <!-- Стили для цветных акцентов -->
       <style>
+        .feed-page {
+          width: 100%;
+          max-width: 100%;
+          padding: 0;
+        }
+        .feed-tabs {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+          margin-bottom: 16px;
+        }
+        .feed-tab-btn {
+          border: 1px solid rgba(255,255,255,0.12);
+          border-radius: 12px;
+          background: rgba(255,255,255,0.03);
+          color: var(--text-secondary);
+          padding: 10px 12px;
+          font-size: clamp(13px, 3.4vw, 14px);
+          font-weight: 600;
+          line-height: 1.2;
+          cursor: pointer;
+          transition: all var(--transition-fast);
+        }
+        .feed-tab-btn.active {
+          background: linear-gradient(135deg, rgba(65,140,255,0.24), rgba(65,140,255,0.1));
+          color: var(--text-primary);
+          border-color: rgba(65,140,255,0.55);
+          box-shadow: 0 8px 20px rgba(65,140,255,0.18);
+        }
+        .feed-tab-btn:active {
+          transform: scale(0.98);
+        }
+        .feed-item {
+          display: block !important;
+          position: relative;
+          background: var(--bg-card);
+          border-radius: 16px;
+          padding: 14px 12px 12px 16px;
+          margin-bottom: 12px;
+          overflow: hidden;
+        }
         .feed-item-accent {
           position: absolute;
           left: 0;
@@ -66,56 +108,30 @@ const FeedPage = (() => {
           width: 3px;
           border-radius: 3px 0 0 3px;
         }
-        .feed-item {
-          position: relative;
-          padding-left: 18px !important;
-        }
         .feed-user-row {
           display: flex;
           align-items: center;
           gap: 8px;
-          margin-bottom: 6px;
+          margin-bottom: 10px;
           cursor: pointer;
+          width: 100%;
         }
         .feed-user-avatar {
-          width: 28px;
-          height: 28px;
+          width: 30px;
+          height: 30px;
           border-radius: 50%;
           object-fit: cover;
+          flex-shrink: 0;
         }
         .feed-user-name {
-          font-size: 13px;
+          font-size: clamp(13px, 3.3vw, 14px);
           font-weight: 600;
           color: var(--text-secondary);
-        }
-        .feed-item {
-          position: relative;
-          background: var(--bg-card);
-          border-radius: var(--radius-lg);
-          padding: 14px 14px 10px 18px;
-          margin-bottom: 10px;
-        }
-        .feed-item-accent {
-          position: absolute;
-          left: 0; top: 0; bottom: 0; width: 3px;
-          border-radius: 3px 0 0 3px;
-        }
-        .feed-user-row {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin-bottom: 8px;
-          cursor: pointer;
-        }
-        .feed-user-avatar {
-          width: 28px; height: 28px;
-          border-radius: 50%;
-          object-fit: cover;
-        }
-        .feed-user-name {
-          font-size: 13px;
-          font-weight: 600;
           flex: 1;
+          min-width: 0;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .feed-rank-tag {
           font-size: 11px;
@@ -127,32 +143,48 @@ const FeedPage = (() => {
         .feed-time {
           font-size: 11px;
           color: var(--text-muted);
+          white-space: nowrap;
         }
         .feed-content {
-          display: flex;
-          gap: 10px;
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 6px;
           align-items: flex-start;
+          width: 100%;
         }
         .feed-icon-wrap {
-          font-size: 24px;
-          flex-shrink: 0;
+          font-size: clamp(22px, 6vw, 26px);
+          line-height: 1;
         }
-        .feed-body { flex: 1; }
+        .feed-body {
+          width: 100%;
+        }
         .feed-title {
-          font-size: 14px;
+          font-size: clamp(18px, 4.8vw, 28px);
           font-weight: 600;
+          line-height: 1.25;
+          word-break: break-word;
         }
         .feed-text {
-          font-size: 13px;
+          font-size: clamp(13px, 3.5vw, 15px);
           color: var(--text-secondary);
-          margin-top: 2px;
+          margin-top: 4px;
+          line-height: 1.35;
+          word-break: break-word;
         }
 
         .reactions-row {
           display: flex;
-          gap: 4px;
+          gap: 6px;
           margin-top: 10px;
           flex-wrap: wrap;
+          justify-content: flex-start;
+          width: 100%;
+          clear: both;
+        }
+        .feed-reactions {
+          display: block;
+          width: 100%;
         }
         .reaction-btn {
           display: flex;
@@ -197,6 +229,17 @@ const FeedPage = (() => {
         .reaction-btn.active .reaction-count {
           color: white;
         }
+        @media (max-width: 380px) {
+          .feed-tab-btn {
+            padding: 9px 10px;
+          }
+          .feed-rank-tag {
+            padding: 2px 5px;
+          }
+          .feed-item {
+            padding-right: 10px;
+          }
+        }
       </style>
     `;
   }
@@ -210,7 +253,7 @@ const FeedPage = (() => {
     currentPage = 0;
 
     // Обновляем вкладки
-    document.querySelectorAll('.feed-page .search-tab-btn').forEach(btn => {
+    document.querySelectorAll('.feed-page .feed-tab-btn').forEach(btn => {
       btn.classList.remove('active');
     });
     const activeBtn = document.getElementById(`feed-tab-${tab}`);
