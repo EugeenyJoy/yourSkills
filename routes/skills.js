@@ -523,30 +523,19 @@ function checkCheckinAchievements(userId) {
 
 
 // ============================================
-// БЕЙДЖИ
+// БЕЙДЖИ (хранение в user_badges, см. lib/badges.js)
 // ============================================
 
-const BADGE_INFO = {
-  creator:       { name: 'Создатель',             icon: '⚡', color: '#fbbf24' },
-  early_adopter: { name: 'Ранний пользователь',   icon: '🌟', color: '#a78bfa' },
-  verified:      { name: 'Верифицирован',          icon: '✅', color: '#34d399' },
-  contributor:   { name: 'Контрибьютор',           icon: '🔧', color: '#60a5fa' },
-  moderator:     { name: 'Модератор',              icon: '🛡️', color: '#f472b6' },
-};
-
-function getUserBadges(userId) {
-  const row = db.prepare('SELECT badges FROM users WHERE id = ?').get(userId);
-  try { return JSON.parse(row?.badges || '[]'); }
-  catch { return []; }
-}
+const badgeLib = require('../lib/badges');
+const BADGE_INFO = badgeLib.BADGE_INFO;
 
 function addBadge(userId, badge) {
-  const badges = getUserBadges(userId);
-  if (badges.includes(badge)) return false;
-  badges.push(badge);
-  db.prepare('UPDATE users SET badges = ? WHERE id = ?')
-    .run(JSON.stringify(badges), userId);
-  return true;
+  const r = badgeLib.grantBadge(userId, badge, 'system');
+  return r.granted;
+}
+
+function getUserBadges(userId) {
+  return badgeLib.getUserBadgeKeys(userId);
 }
 
 

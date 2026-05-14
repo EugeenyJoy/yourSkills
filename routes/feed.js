@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database');
 const authMiddleware = require('../middleware/auth');
+const badgeLib = require('../lib/badges');
 
 
 // ============================================
@@ -163,6 +164,11 @@ function loadFeed(query, params, userId, page, limit) {
     formatted.id = row.id; // Гарантируем id
     return formatted;
   });
+
+  const badgeMap = badgeLib.getVisibleBadgeKeysMap(events.map(e => e.user.id));
+  for (const e of events) {
+    e.user.badgeKeys = badgeMap.get(e.user.id) || [];
+  }
 
   const enriched = attachReactions(events, userId);
 

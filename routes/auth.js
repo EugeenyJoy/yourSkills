@@ -5,6 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../database');
+const badgeLib = require('../lib/badges');
 
 // ID создателя — ЗАМЕНИ НА СВОЙ Telegram ID
 const CREATOR_ID = parseInt(process.env.CREATOR_ID) || null;
@@ -17,7 +18,7 @@ const findUser = db.prepare('SELECT * FROM users WHERE id = ?');
 
 const createUser = db.prepare(`
   INSERT INTO users (id, first_name, last_name, username, photo_url, language_code, badges)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, '[]')
 `);
 
 const updateUser = db.prepare(`
@@ -81,24 +82,22 @@ router.post('/login', (req, res) => {
       // Новый пользователь
       isNew = true;
 
-      // Бейджи для нового пользователя
-      const badges = [];
-      if (CREATOR_ID && tgUser.id === CREATOR_ID) {
-        badges.push('creator');
-      }
-
       createUser.run(
         tgUser.id,
         tgUser.username || tgUser.first_name || 'User',
         tgUser.last_name || '',
         tgUser.username || '',
         tgUser.photo_url || '',
-        tgUser.language_code || 'ru',
-        JSON.stringify(badges)
+        tgUser.language_code || 'ru'
       );
 
       user = findUser.get(tgUser.id);
       console.log(`👤 Новый пользователь: ${user.first_name} (#${user.id})`);
+
+      if (CREATOR_ID && tgUser.id === CREATOR_ID) {
+        badgeLib.grantBadge(tgUser.id, 'creator', 'system');
+      }
+      badgeLib.maybeGrantEarlyAdopter(tgUser.id);
 
     } else {
       // Обновляем данные
@@ -112,10 +111,8 @@ router.post('/login', (req, res) => {
       );
       user = findUser.get(tgUser.id);
 
-      // Проверяем бейдж создателя
       if (CREATOR_ID && tgUser.id === CREATOR_ID) {
-        const skillsRouter = require('./skills');
-        skillsRouter.addBadge(tgUser.id, 'creator');
+        badgeLib.grantBadge(tgUser.id, 'creator', 'system');
       }
     }
 
@@ -152,41 +149,11 @@ router.post('/login', (req, res) => {
       });
     }
 
-    // Парсим бейджи
-    let badges = [];
-    try { badges = JSON.parse(user.badges || '[]'); }
-    catch { badges = []; }
-
     const skillsRouter = require('./skills');
-    
-    // Нормализуем бейджи в единый формат
-    const badgeDetails = badges
-      .filter(b => b)
-      .map(b => {
-        let badgeCode = '';
-        let badgeVisible = true;
-        
-        if (typeof b === 'string') {
-          badgeCode = b;
-        } else if (typeof b === 'object' && b.code) {
-          badgeCode = b.code;
-          badgeVisible = b.visible !== false;
-        }
-        
-        if (!badgeCode) return null;
-        
-        const badgeInfo = skillsRouter.BADGE_INFO[badgeCode] || {};
-        return {
-          code: badgeCode,
-          name: badgeInfo.name || badgeCode,
-          icon: badgeInfo.icon || '🏷️',
-          color: badgeInfo.color || '#888',
-          visible: badgeVisible
-        };
-      })
-      .filter(b => b !== null);
 
-    // Статистика
+    const badgeDetails = badgeLib.getUserBadgesForApi(user.id);
+    const badgeKeys = [...new Set(badgeLib.getVisibleUserBadgeKeys(user.id))];
+
     const totalCheckins = db.prepare(
       'SELECT COUNT(*) as c FROM checkins WHERE user_id = ?'
     ).get(user.id).c;
@@ -209,6 +176,7 @@ router.post('/login', (req, res) => {
         overallXP: user.overall_xp || 0,
         overallRankInfo: skillsRouter.getRankInfo(user.overall_xp || 0),
         badges: badgeDetails,
+        badgeKeys,
         createdAt: user.created_at,
       },
       skills: skills.map(s => ({

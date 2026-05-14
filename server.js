@@ -344,6 +344,7 @@ app.use('/api/skills',       require('./routes/skills'));
 app.use('/api/endorsements', require('./routes/endorsements'));
 app.use('/api/streaks',      require('./routes/streaks'));
 app.use('/api/feed',         require('./routes/feed'));
+app.use('/api/admin',        require('./routes/admin'));
 
 
 // ============================================

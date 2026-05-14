@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database');
 const authMiddleware = require('../middleware/auth');
+const badgeLib = require('../lib/badges');
 
 
 router.use(authMiddleware);
@@ -93,48 +94,9 @@ function buildProfile(userId, viewerId) {
     'SELECT COUNT(*) as c FROM endorsements WHERE to_user_id = ?'
   ).get(userId).c;
 
-  // Бейджи
-  let badges = [];
-  try { badges = JSON.parse(user.badges || '[]'); } catch { }
-  
-  // Нормализуем бейджи в единый формат
-  const normalizedBadges = badges
-    .filter(b => b) // Фильтруем null/undefined
-    .map(b => {
-      let badgeData = {
-        code: '',
-        name: '',
-        icon: '🏷️',
-        color: '#888',
-        visible: true
-      };
-
-      if (typeof b === 'string') {
-        // Старый формат: просто строка с кодом
-        badgeData.code = String(b).trim();
-        badgeData.visible = true;
-      } else if (typeof b === 'object' && b !== null) {
-        // Новый формат: объект
-        badgeData.code = String(b.code || '').trim();
-        badgeData.visible = b.visible !== false;
-      }
-
-      // Пропускаем бейджи с пустым кодом
-      if (!badgeData.code) return null;
-
-      // Дополняем информацией из BADGE_INFO
-      if (skillsRouter.BADGE_INFO[badgeData.code]) {
-        const info = skillsRouter.BADGE_INFO[badgeData.code];
-        badgeData.name = info.name || badgeData.code;
-        badgeData.icon = info.icon || '🏷️';
-        badgeData.color = info.color || '#888';
-      } else {
-        badgeData.name = badgeData.code;
-      }
-
-      return badgeData;
-    })
-    .filter(b => b !== null); // Удаляем null значения
+  // Бейджи (таблица user_badges)
+  const normalizedBadges = badgeLib.getUserBadgesForApi(userId);
+  const badgeKeys = [...new Set(badgeLib.getVisibleUserBadgeKeys(userId))];
 
   const mapBadgeToClient = (b) => ({
     code: b.code || '',
@@ -144,9 +106,8 @@ function buildProfile(userId, viewerId) {
     visible: b.visible !== false
   });
 
-  // На карточке профиля (для всех, включая владельца) — только видимые бейджи
-  const badgeDetails = normalizedBadges
-    .filter(b => b.visible !== false)
+  // На карточке профиля: владелец видит все свои бейджи; остальные — только с visible
+  const badgeDetails = (userId === viewerId ? normalizedBadges : normalizedBadges.filter(b => b.visible !== false))
     .map(mapBadgeToClient);
 
   const userPayload = {
@@ -161,6 +122,7 @@ function buildProfile(userId, viewerId) {
     overallXP: user.overall_xp || 0,
     overallRankInfo: skillsRouter.getRankInfo(user.overall_xp || 0),
     badges: badgeDetails,
+    badgeKeys,
     isOwn: userId === viewerId,
     createdAt: user.created_at,
   };
@@ -225,83 +187,23 @@ router.put('/me', (req, res) => {
       return res.status(400).json({ error: 'Слишком длинный текст профиля' });
     }
 
-    // Обработка видимости бейджей
-    let updatedBadges = null;
+    // Видимость бейджей (только существующие строки в user_badges)
     if (req.body.badges && Array.isArray(req.body.badges)) {
-      const user = db.prepare('SELECT badges FROM users WHERE id = ?').get(req.userId);
-      let currentBadges = [];
-      try {
-        currentBadges = JSON.parse(user?.badges || '[]');
-      } catch (e) {
-        currentBadges = [];
+      for (const b of req.body.badges) {
+        const code = String(b?.code || '').trim();
+        if (!code) continue;
+        if (!badgeLib.hasBadge(req.userId, code)) continue;
+        badgeLib.setBadgeVisibility(req.userId, code, b.visible !== false);
       }
-
-      // Нормализуем текущие бейджи в объекты
-      const normalizedCurrent = currentBadges.map(b => {
-        if (typeof b === 'string') {
-          const skillsRouter = require('./skills');
-          return {
-            code: b,
-            name: skillsRouter.BADGE_INFO?.[b]?.name || b,
-            icon: skillsRouter.BADGE_INFO?.[b]?.icon || '🏷️',
-            color: skillsRouter.BADGE_INFO?.[b]?.color || '#888',
-            visible: true
-          };
-        }
-        // Если уже объект, убеждаемся, что все поля есть
-        const skillsRouter = require('./skills');
-        return {
-          code: b.code || b,
-          name: b.name || (skillsRouter.BADGE_INFO?.[b.code]?.name || b.code || ''),
-          icon: b.icon || (skillsRouter.BADGE_INFO?.[b.code]?.icon || '🏷️'),
-          color: b.color || (skillsRouter.BADGE_INFO?.[b.code]?.color || '#888'),
-          visible: b.visible !== false
-        };
-      });
-
-      // Полностью заменяем видимость бейджей из запроса
-      updatedBadges = req.body.badges
-        .filter(b => b?.code) // Фильтруем некорректные записи
-        .map(b => ({
-          code: b.code,
-          name: b.name || normalizedCurrent.find(nb => nb.code === b.code)?.name || b.code,
-          icon: b.icon || normalizedCurrent.find(nb => nb.code === b.code)?.icon || '🏷️',
-          color: b.color || normalizedCurrent.find(nb => nb.code === b.code)?.color || '#888',
-          visible: b.visible !== false
-        }));
     }
 
-    const updateData = {
-      first_name: firstName,
-      last_name: lastName,
-      profile_text: profileText,
-      show_profile_text: showProfileText,
-      updated_at: 'CURRENT_TIMESTAMP'
-    };
-
-    let query = `
+    const query = `
       UPDATE users
       SET first_name = ?, last_name = ?, profile_text = ?, show_profile_text = ?,
           updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
     `;
-    const params = [firstName, lastName, profileText, showProfileText];
-
-    if (updatedBadges !== null) {
-      query = `
-        UPDATE users
-        SET first_name = ?, last_name = ?, profile_text = ?, show_profile_text = ?,
-            badges = ?, updated_at = CURRENT_TIMESTAMP
-      `;
-      const badgesJson = JSON.stringify(updatedBadges);
-      if (!badgesJson || badgesJson === '[object Object]') {
-        console.error('❌ Некорректный JSON для бейджей:', updatedBadges);
-        return res.status(500).json({ error: 'Ошибка при сохранении бейджей' });
-      }
-      params.push(badgesJson);
-    }
-
-    query += ` WHERE id = ?`;
-    params.push(req.userId);
+    const params = [firstName, lastName, profileText, showProfileText, req.userId];
 
     db.prepare(query).run(...params);
 
@@ -344,6 +246,8 @@ router.post('/me/reset', (req, res) => {
       db.prepare('DELETE FROM user_skills WHERE user_id = ?').run(userId);
       db.prepare('DELETE FROM follows WHERE follower_id = ? OR following_id = ?')
         .run(userId, userId);
+
+      db.prepare('DELETE FROM user_badges WHERE user_id = ?').run(userId);
 
       db.prepare(`
         UPDATE users
@@ -454,7 +358,9 @@ router.get('/search/users', (req, res) => {
 
     const rows = db.prepare(query).all(...params);
     const hasMore = rows.length > limit;
-    const users = rows.slice(0, limit).map(u => ({
+    const sliced = rows.slice(0, limit);
+    const badgeMap = badgeLib.getVisibleBadgeKeysMap(sliced.map(r => r.id));
+    const users = sliced.map(u => ({
       id: u.id,
       firstName: u.first_name,
       lastName: u.last_name,
@@ -463,6 +369,7 @@ router.get('/search/users', (req, res) => {
       rank: u.overall_rank || 'F',
       xp: u.overall_xp || 0,
       skillRank: u.skill_rank || null,
+      badgeKeys: badgeMap.get(u.id) || [],
     }));
 
     res.json({ users, hasMore, page });
@@ -478,7 +385,7 @@ router.get('/top/users', (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 20, 100);
 
-    const users = db.prepare(`
+    const rows = db.prepare(`
       SELECT id, first_name, last_name, username,
              photo_url, overall_rank, overall_xp
       FROM users
@@ -487,8 +394,10 @@ router.get('/top/users', (req, res) => {
       LIMIT ?
     `).all(limit);
 
+    const badgeMap = badgeLib.getVisibleBadgeKeysMap(rows.map(r => r.id));
+
     res.json({
-      users: users.map((u, i) => ({
+      users: rows.map((u, i) => ({
         id: u.id,
         firstName: u.first_name,
         lastName: u.last_name,
@@ -497,6 +406,7 @@ router.get('/top/users', (req, res) => {
         rank: u.overall_rank || 'F',
         xp: u.overall_xp || 0,
         position: i + 1,
+        badgeKeys: badgeMap.get(u.id) || [],
       }))
     });
 
@@ -598,6 +508,8 @@ router.get('/:userId/followers', (req, res) => {
       LIMIT ? OFFSET ?
     `).all(userId, limit, page * limit);
 
+    const badgeMap = badgeLib.getVisibleBadgeKeysMap(users.map(u => u.id));
+
     const total = db.prepare(
       'SELECT COUNT(*) as c FROM follows WHERE following_id = ?'
     ).get(userId).c;
@@ -607,6 +519,7 @@ router.get('/:userId/followers', (req, res) => {
         id: u.id, firstName: u.first_name, lastName: u.last_name,
         username: u.username, photoUrl: u.photo_url,
         rank: u.overall_rank || 'F', xp: u.overall_xp || 0,
+        badgeKeys: badgeMap.get(u.id) || [],
       })),
       total
     });
@@ -634,6 +547,8 @@ router.get('/:userId/following', (req, res) => {
       LIMIT ? OFFSET ?
     `).all(userId, limit, page * limit);
 
+    const badgeMap = badgeLib.getVisibleBadgeKeysMap(users.map(u => u.id));
+
     const total = db.prepare(
       'SELECT COUNT(*) as c FROM follows WHERE follower_id = ?'
     ).get(userId).c;
@@ -643,6 +558,7 @@ router.get('/:userId/following', (req, res) => {
         id: u.id, firstName: u.first_name, lastName: u.last_name,
         username: u.username, photoUrl: u.photo_url,
         rank: u.overall_rank || 'F', xp: u.overall_xp || 0,
+        badgeKeys: badgeMap.get(u.id) || [],
       })),
       total
     });
