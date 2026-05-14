@@ -333,6 +333,7 @@ const FeedPage = (() => {
       <div class="feed-item" data-event-id="${event.id}">
         <div class="feed-item-accent" style="background: ${accentColor};"></div>
 
+        <div style="width:100%;margin-bottom:10px;">
         <div class="feed-user-row" data-link href="/user/${event.user.id}">
           <img class="feed-user-avatar"
             src="${Card.escapeHtml(event.user.avatarUrl)}"
@@ -346,6 +347,8 @@ const FeedPage = (() => {
             ${event.user.rank || 'F'}
           </span>
           <span class="feed-time">${Card.escapeHtml(event.timeAgo)}</span>
+        </div>
+        ${Card.renderCompactUserBadges(event.user.badgeKeys)}
         </div>
 
         <div class="feed-content">

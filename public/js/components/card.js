@@ -130,21 +130,35 @@ const Card = (() => {
   }
 
   /**
-   * Публичные бейджи пользователя на карточке
+   * Публичные бейджи пользователя на карточке (полный профиль — все видимые, без дублей)
    */
   function renderUserBadges(badges) {
     if (!badges || badges.length === 0) return '';
-    const visible = badges.filter(b =>
-      typeof b === 'string' ? true : b.visible !== false
-    );
-    if (visible.length === 0) return '';
+    const cat = typeof BadgeCatalog !== 'undefined' ? BadgeCatalog.BADGE_INFO : null;
+    const seen = new Set();
+    const list = [];
+    for (const raw of badges) {
+      const code = typeof raw === 'string'
+        ? String(raw).trim()
+        : String(raw?.code || '').trim();
+      if (!code || seen.has(code)) continue;
+      if (cat && !cat[code]) continue;
+      const vis = typeof raw === 'string' ? true : raw.visible !== false;
+      if (!vis) continue;
+      seen.add(code);
+      const meta = cat && cat[code]
+        ? cat[code]
+        : {
+            name: (raw && raw.name) || code,
+            icon: (raw && raw.icon) || '🏷️',
+            color: (raw && raw.color) || '#888',
+          };
+      list.push({ code, name: meta.name, icon: meta.icon, color: meta.color });
+    }
+    if (list.length === 0) return '';
     return `
       <div class="card-badges-row">
-        ${visible.map(b => {
-          const item = typeof b === 'string'
-            ? { name: b, icon: '🏷️', color: '#888' }
-            : { name: b.name || b.code || '', icon: b.icon || '🏷️', color: b.color || '#888' };
-          return `
+        ${list.map(item => `
           <div class="card-badge-item" style="
             background: ${item.color}22;
             color: ${item.color};
@@ -152,10 +166,36 @@ const Card = (() => {
           ">
             ${item.icon} ${escapeHtml(item.name)}
           </div>
-        `;
-        }).join('')}
+        `).join('')}
       </div>
     `;
+  }
+
+  /**
+   * Компактно: до 3 бейджей по престижу, затем +N (топ, поиск, лента)
+   */
+  function renderCompactUserBadges(badgeKeys) {
+    if (typeof BadgeCatalog === 'undefined') return '';
+    const keys = [...new Set(badgeKeys || [])];
+    const { show, more } = BadgeCatalog.compactBadgeMeta(keys, 3);
+    if (show.length === 0 && more === 0) return '';
+    let chips = show.map(key => {
+      const b = BadgeCatalog.BADGE_INFO[key];
+      return `
+        <span class="card-badge-item" style="
+          display:inline-flex;align-items:center;gap:4px;
+          padding:4px 8px;font-size:12px;font-weight:600;
+          background:${b.color}22;color:${b.color};border:1px solid ${b.color}44;
+          border-radius:999px;
+        ">${b.icon} ${escapeHtml(b.name)}</span>`;
+    }).join('');
+    if (more > 0) {
+      chips += `<span class="card-badge-item" style="
+        display:inline-flex;align-items:center;padding:4px 8px;font-size:12px;font-weight:600;
+        opacity:0.85;border-radius:999px;border:1px solid rgba(255,255,255,0.15);
+      ">+${more}</span>`;
+    }
+    return `<div class="card-badges-row" style="flex-wrap:wrap;gap:6px;margin-top:2px;">${chips}</div>`;
   }
 
 
@@ -397,7 +437,9 @@ const Card = (() => {
         class="user-item"
         data-link
         href="/user/${user.id}"
+        style="flex-direction:column;align-items:stretch;"
       >
+        <div style="display:flex;align-items:center;gap:12px;width:100%;">
         <img
           class="user-avatar"
           src="${escapeHtml(avatarUrl)}"
@@ -418,6 +460,8 @@ const Card = (() => {
              </div>`
           : `<div class="skill-rank rank-${rank}">${user.rank || 'E'}</div>`
         }
+        </div>
+        ${renderCompactUserBadges(user.badgeKeys)}
       </div>
     `;
   }
@@ -474,6 +518,7 @@ const Card = (() => {
     renderXPBar,
     renderSkillItem,
     renderUserItem,
+    renderCompactUserBadges,
     renderAchievementsSection,
     escapeHtml,
     pluralYears,
