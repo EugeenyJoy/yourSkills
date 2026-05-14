@@ -188,6 +188,72 @@ if (!userColumns.includes('show_profile_text')) {
   db.exec("ALTER TABLE users ADD COLUMN show_profile_text INTEGER DEFAULT 0");
 }
 
+// Мета-приложения (одноразовые миграции)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS app_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+`);
+
+// Бейджи пользователей (многие-ко-многим, без дублей по паре user + badge)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_badges (
+    user_id INTEGER NOT NULL,
+    badge_key TEXT NOT NULL,
+    granted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    granted_by TEXT DEFAULT 'system',
+    visible INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (user_id, badge_key),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_user_badges_user ON user_badges(user_id);
+`);
+
+const BADGE_KEYS_MIGRATION = new Set([
+  'creator', 'early_adopter', 'verified', 'contributor', 'moderator'
+]);
+
+const legacyBadgesMigrated = db.prepare(
+  "SELECT 1 FROM app_meta WHERE key = 'badges_migrated_v1'"
+).get();
+
+if (!legacyBadgesMigrated) {
+  db.transaction(() => {
+    const allUsers = db.prepare('SELECT id, badges FROM users').all();
+    const insertBadge = db.prepare(`
+      INSERT OR IGNORE INTO user_badges (user_id, badge_key, granted_at, granted_by, visible)
+      VALUES (?, ?, datetime('now'), 'migration', ?)
+    `);
+    for (const u of allUsers) {
+      let arr = [];
+      try {
+        arr = JSON.parse(u.badges || '[]');
+      } catch {
+        arr = [];
+      }
+      if (!Array.isArray(arr)) continue;
+      const seen = new Set();
+      for (const entry of arr) {
+        let code = '';
+        let vis = 1;
+        if (typeof entry === 'string') {
+          code = String(entry).trim();
+        } else if (entry && typeof entry === 'object') {
+          code = String(entry.code || '').trim();
+          vis = entry.visible !== false ? 1 : 0;
+        }
+        if (!code || !BADGE_KEYS_MIGRATION.has(code) || seen.has(code)) continue;
+        seen.add(code);
+        insertBadge.run(u.id, code, vis);
+      }
+    }
+    db.prepare("UPDATE users SET badges = '[]' WHERE 1=1").run();
+    db.prepare("INSERT OR IGNORE INTO app_meta (key, value) VALUES ('badges_migrated_v1', '1')").run();
+  })();
+  console.log('✅ Миграция бейджей: JSON → user_badges');
+}
+
 
 // ============================================
 // КАТАЛОГ: Категории → Подкатегории → Навыки
