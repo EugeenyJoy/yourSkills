@@ -179,6 +179,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_user_achievements_user ON user_achievements(user_id);
 `);
 
+// Миграции для новых полей профиля
+const userColumns = db.prepare('PRAGMA table_info(users)').all().map(c => c.name);
+if (!userColumns.includes('profile_text')) {
+  db.exec("ALTER TABLE users ADD COLUMN profile_text TEXT DEFAULT ''");
+}
+if (!userColumns.includes('show_profile_text')) {
+  db.exec("ALTER TABLE users ADD COLUMN show_profile_text INTEGER DEFAULT 0");
+}
+
 
 // ============================================
 // КАТАЛОГ: Категории → Подкатегории → Навыки

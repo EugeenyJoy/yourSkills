@@ -43,8 +43,8 @@ const Card = (() => {
           >
           <div class="card-info">
             <div class="card-name">${escapeHtml(user.firstName)} ${escapeHtml(user.lastName || '')}</div>
-            ${user.username
-              ? `<div class="card-username">@${escapeHtml(user.username)}</div>`
+            ${user.showProfileText && user.profileText
+              ? `<div class="card-username" style="opacity:0.9;">${escapeHtml(user.profileText)}</div>`
               : ''
             }
           </div>
@@ -134,17 +134,26 @@ const Card = (() => {
    */
   function renderUserBadges(badges) {
     if (!badges || badges.length === 0) return '';
+    const visible = badges.filter(b =>
+      typeof b === 'string' ? true : b.visible !== false
+    );
+    if (visible.length === 0) return '';
     return `
       <div class="card-badges-row">
-        ${badges.map(b => `
+        ${visible.map(b => {
+          const item = typeof b === 'string'
+            ? { name: b, icon: '🏷️', color: '#888' }
+            : { name: b.name || b.code || '', icon: b.icon || '🏷️', color: b.color || '#888' };
+          return `
           <div class="card-badge-item" style="
-            background: ${b.color}22;
-            color: ${b.color};
-            border: 1px solid ${b.color}44;
+            background: ${item.color}22;
+            color: ${item.color};
+            border: 1px solid ${item.color}44;
           ">
-            ${b.icon} ${escapeHtml(b.name)}
+            ${item.icon} ${escapeHtml(item.name)}
           </div>
-        `).join('')}
+        `;
+        }).join('')}
       </div>
     `;
   }

@@ -184,12 +184,6 @@ const API = (() => {
     return result;
   }
 
-  async function deleteMyProfile() {
-    const result = await request('/profile/me', { method: 'DELETE' });
-    clearCache();
-    return result;
-  }
-
   // ==========================================
   // НАВЫКИ
   // ==========================================
@@ -346,7 +340,6 @@ const API = (() => {
     searchUsers,
     getTopUsers,
     resetMyProfile,
-    deleteMyProfile,
 
     // Навыки
     getCatalog,

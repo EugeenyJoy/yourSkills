@@ -89,7 +89,7 @@ router.post('/login', (req, res) => {
 
       createUser.run(
         tgUser.id,
-        tgUser.first_name || 'User',
+        tgUser.username || tgUser.first_name || 'User',
         tgUser.last_name || '',
         tgUser.username || '',
         tgUser.photo_url || '',
@@ -103,9 +103,9 @@ router.post('/login', (req, res) => {
     } else {
       // Обновляем данные
       updateUser.run(
-        tgUser.first_name || user.first_name,
-        tgUser.last_name || user.last_name,
-        tgUser.username || user.username,
+        user.first_name || tgUser.username || tgUser.first_name || 'User',
+        user.last_name || tgUser.last_name || '',
+        user.username || tgUser.username || '',
         tgUser.photo_url || user.photo_url,
         tgUser.language_code || user.language_code,
         tgUser.id
@@ -158,10 +158,33 @@ router.post('/login', (req, res) => {
     catch { badges = []; }
 
     const skillsRouter = require('./skills');
-    const badgeDetails = badges.map(b => ({
-      code: b,
-      ...(skillsRouter.BADGE_INFO[b] || { name: b, icon: '🏷️', color: '#888' })
-    }));
+    
+    // Нормализуем бейджи в единый формат
+    const badgeDetails = badges
+      .filter(b => b)
+      .map(b => {
+        let badgeCode = '';
+        let badgeVisible = true;
+        
+        if (typeof b === 'string') {
+          badgeCode = b;
+        } else if (typeof b === 'object' && b.code) {
+          badgeCode = b.code;
+          badgeVisible = b.visible !== false;
+        }
+        
+        if (!badgeCode) return null;
+        
+        const badgeInfo = skillsRouter.BADGE_INFO[badgeCode] || {};
+        return {
+          code: badgeCode,
+          name: badgeInfo.name || badgeCode,
+          icon: badgeInfo.icon || '🏷️',
+          color: badgeInfo.color || '#888',
+          visible: badgeVisible
+        };
+      })
+      .filter(b => b !== null);
 
     // Статистика
     const totalCheckins = db.prepare(
@@ -179,6 +202,8 @@ router.post('/login', (req, res) => {
         firstName: user.first_name,
         lastName: user.last_name,
         username: user.username,
+        profileText: user.profile_text || '',
+        showProfileText: !!user.show_profile_text,
         photoUrl: user.photo_url,
         overallRank: user.overall_rank || 'F',
         overallXP: user.overall_xp || 0,

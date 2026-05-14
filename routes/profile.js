@@ -96,25 +96,82 @@ function buildProfile(userId, viewerId) {
   // Бейджи
   let badges = [];
   try { badges = JSON.parse(user.badges || '[]'); } catch { }
-  const badgeDetails = badges.map(b => ({
-    code: b,
-    ...(skillsRouter.BADGE_INFO[b] || { name: b, icon: '🏷️', color: '#888' })
-  }));
+  
+  // Нормализуем бейджи в единый формат
+  const normalizedBadges = badges
+    .filter(b => b) // Фильтруем null/undefined
+    .map(b => {
+      let badgeData = {
+        code: '',
+        name: '',
+        icon: '🏷️',
+        color: '#888',
+        visible: true
+      };
+
+      if (typeof b === 'string') {
+        // Старый формат: просто строка с кодом
+        badgeData.code = String(b).trim();
+        badgeData.visible = true;
+      } else if (typeof b === 'object' && b !== null) {
+        // Новый формат: объект
+        badgeData.code = String(b.code || '').trim();
+        badgeData.visible = b.visible !== false;
+      }
+
+      // Пропускаем бейджи с пустым кодом
+      if (!badgeData.code) return null;
+
+      // Дополняем информацией из BADGE_INFO
+      if (skillsRouter.BADGE_INFO[badgeData.code]) {
+        const info = skillsRouter.BADGE_INFO[badgeData.code];
+        badgeData.name = info.name || badgeData.code;
+        badgeData.icon = info.icon || '🏷️';
+        badgeData.color = info.color || '#888';
+      } else {
+        badgeData.name = badgeData.code;
+      }
+
+      return badgeData;
+    })
+    .filter(b => b !== null); // Удаляем null значения
+
+  const mapBadgeToClient = (b) => ({
+    code: b.code || '',
+    name: b.name || '',
+    icon: b.icon || '🏷️',
+    color: b.color || '#888',
+    visible: b.visible !== false
+  });
+
+  // На карточке профиля (для всех, включая владельца) — только видимые бейджи
+  const badgeDetails = normalizedBadges
+    .filter(b => b.visible !== false)
+    .map(mapBadgeToClient);
+
+  const userPayload = {
+    id: user.id,
+    firstName: user.first_name,
+    lastName: user.last_name,
+    username: user.username,
+    profileText: user.profile_text || '',
+    showProfileText: !!user.show_profile_text,
+    photoUrl: user.photo_url,
+    overallRank: user.overall_rank || 'F',
+    overallXP: user.overall_xp || 0,
+    overallRankInfo: skillsRouter.getRankInfo(user.overall_xp || 0),
+    badges: badgeDetails,
+    isOwn: userId === viewerId,
+    createdAt: user.created_at,
+  };
+
+  // Полный список с видимостью — только для владельца (экран настроек)
+  if (userId === viewerId) {
+    userPayload.badgesAll = normalizedBadges.map(mapBadgeToClient);
+  }
 
   return {
-    user: {
-      id: user.id,
-      firstName: user.first_name,
-      lastName: user.last_name,
-      username: user.username,
-      photoUrl: user.photo_url,
-      overallRank: user.overall_rank || 'F',
-      overallXP: user.overall_xp || 0,
-      overallRankInfo: skillsRouter.getRankInfo(user.overall_xp || 0),
-      badges: badgeDetails,
-      isOwn: userId === viewerId,
-      createdAt: user.created_at,
-    },
+    user: userPayload,
     categories: Array.from(catMap.values()),
     achievements: achievements.map(a => ({
       id: a.id, code: a.code, name: a.name,
@@ -153,8 +210,8 @@ router.put('/me', (req, res) => {
   try {
     const firstName = String(req.body.firstName || '').trim();
     const lastName = String(req.body.lastName || '').trim();
-    const usernameRaw = String(req.body.username || '').trim();
-    const username = usernameRaw.replace(/^@+/, '');
+    const profileText = String(req.body.profileText || '').trim();
+    const showProfileText = req.body.showProfileText ? 1 : 0;
 
     if (!firstName) {
       return res.status(400).json({ error: 'Имя не может быть пустым' });
@@ -164,15 +221,89 @@ router.put('/me', (req, res) => {
       return res.status(400).json({ error: 'Слишком длинное имя' });
     }
 
-    if (username.length > 64) {
-      return res.status(400).json({ error: 'Слишком длинный username' });
+    if (profileText.length > 48) {
+      return res.status(400).json({ error: 'Слишком длинный текст профиля' });
     }
 
-    db.prepare(`
+    // Обработка видимости бейджей
+    let updatedBadges = null;
+    if (req.body.badges && Array.isArray(req.body.badges)) {
+      const user = db.prepare('SELECT badges FROM users WHERE id = ?').get(req.userId);
+      let currentBadges = [];
+      try {
+        currentBadges = JSON.parse(user?.badges || '[]');
+      } catch (e) {
+        currentBadges = [];
+      }
+
+      // Нормализуем текущие бейджи в объекты
+      const normalizedCurrent = currentBadges.map(b => {
+        if (typeof b === 'string') {
+          const skillsRouter = require('./skills');
+          return {
+            code: b,
+            name: skillsRouter.BADGE_INFO?.[b]?.name || b,
+            icon: skillsRouter.BADGE_INFO?.[b]?.icon || '🏷️',
+            color: skillsRouter.BADGE_INFO?.[b]?.color || '#888',
+            visible: true
+          };
+        }
+        // Если уже объект, убеждаемся, что все поля есть
+        const skillsRouter = require('./skills');
+        return {
+          code: b.code || b,
+          name: b.name || (skillsRouter.BADGE_INFO?.[b.code]?.name || b.code || ''),
+          icon: b.icon || (skillsRouter.BADGE_INFO?.[b.code]?.icon || '🏷️'),
+          color: b.color || (skillsRouter.BADGE_INFO?.[b.code]?.color || '#888'),
+          visible: b.visible !== false
+        };
+      });
+
+      // Полностью заменяем видимость бейджей из запроса
+      updatedBadges = req.body.badges
+        .filter(b => b?.code) // Фильтруем некорректные записи
+        .map(b => ({
+          code: b.code,
+          name: b.name || normalizedCurrent.find(nb => nb.code === b.code)?.name || b.code,
+          icon: b.icon || normalizedCurrent.find(nb => nb.code === b.code)?.icon || '🏷️',
+          color: b.color || normalizedCurrent.find(nb => nb.code === b.code)?.color || '#888',
+          visible: b.visible !== false
+        }));
+    }
+
+    const updateData = {
+      first_name: firstName,
+      last_name: lastName,
+      profile_text: profileText,
+      show_profile_text: showProfileText,
+      updated_at: 'CURRENT_TIMESTAMP'
+    };
+
+    let query = `
       UPDATE users
-      SET first_name = ?, last_name = ?, username = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(firstName, lastName, username, req.userId);
+      SET first_name = ?, last_name = ?, profile_text = ?, show_profile_text = ?,
+          updated_at = CURRENT_TIMESTAMP
+    `;
+    const params = [firstName, lastName, profileText, showProfileText];
+
+    if (updatedBadges !== null) {
+      query = `
+        UPDATE users
+        SET first_name = ?, last_name = ?, profile_text = ?, show_profile_text = ?,
+            badges = ?, updated_at = CURRENT_TIMESTAMP
+      `;
+      const badgesJson = JSON.stringify(updatedBadges);
+      if (!badgesJson || badgesJson === '[object Object]') {
+        console.error('❌ Некорректный JSON для бейджей:', updatedBadges);
+        return res.status(500).json({ error: 'Ошибка при сохранении бейджей' });
+      }
+      params.push(badgesJson);
+    }
+
+    query += ` WHERE id = ?`;
+    params.push(req.userId);
+
+    db.prepare(query).run(...params);
 
     const data = buildProfile(req.userId, req.userId);
     res.json({
@@ -219,6 +350,8 @@ router.post('/me/reset', (req, res) => {
         SET overall_rank = 'F',
             overall_xp = 0,
             badges = '[]',
+            profile_text = '',
+            show_profile_text = 0,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(userId);

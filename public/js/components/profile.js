@@ -5,6 +5,25 @@
 const AccountPage = (() => {
 
   /**
+   * Нормализация бейджей в единый формат
+   */
+  function normalizeBadges(badges) {
+    if (!Array.isArray(badges)) return [];
+    return badges.map(b => {
+      if (typeof b === 'string') {
+        return { code: b, name: b, icon: '🏷️', color: '#888', visible: true };
+      }
+      return {
+        code: b.code || '',
+        name: b.name || b.code || '',
+        icon: b.icon || '🏷️',
+        color: b.color || '#888',
+        visible: b.visible !== false
+      };
+    });
+  }
+
+  /**
    * Рендер своего экрана настроек
    *
    * @returns {Promise<string>}
@@ -75,12 +94,26 @@ const AccountPage = (() => {
 
   function renderSettingsPage(data) {
     const user = data.user || {};
-    const badges = Array.isArray(user.badges) ? user.badges : [];
+    // В API для владельца: badges — только видимые на карточке, badgesAll — полный список для настроек
+    const rawBadges = Array.isArray(user.badgesAll)
+      ? user.badgesAll
+      : (Array.isArray(user.badges) ? user.badges : []);
+    let badges = rawBadges;
+
+    // Нормализуем бейджи
+    badges = normalizeBadges(badges);
+    
+    // Сохраняем нормализованные бейджи в App.state для toggleBadgeVisibility
+    if (App.state.user) {
+      App.state.user.badges = badges;
+    }
+    
     const safeFirstName = Card.escapeHtml(user.firstName || '');
     const safeLastName = Card.escapeHtml(user.lastName || '');
-    const safeUsername = Card.escapeHtml(user.username || '');
+    const safeProfileText = Card.escapeHtml(user.profileText || '');
+    const showProfileText = !!user.showProfileText;
 
-    return `
+    const html = `
       <div class="settings-page">
         <div class="section">
           <div class="section-header">
@@ -114,22 +147,42 @@ const AccountPage = (() => {
               ">
             </label>
 
-            <label style="display: grid; gap: 6px;">
-              <span style="font-size: 13px; color: var(--text-secondary);">Username</span>
-              <input id="settings-username" type="text" maxlength="64" placeholder="username" value="${safeUsername}" style="
-                width: 100%;
-                padding: 10px 12px;
-                border-radius: 10px;
-                border: 1px solid rgba(255,255,255,0.12);
-                background: var(--bg-elevated);
-                color: var(--text-primary);
-                font-size: 14px;
-              ">
-            </label>
-
-            <button class="btn btn-primary" onclick="SettingsPage.saveMyProfile()">
-              💾 Сохранить профиль
-            </button>
+            <div style="display: grid; gap: 6px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                <span style="font-size: 13px; color: var(--text-secondary);">Текст профиля</span>
+                <span style="font-size: 12px; color: var(--text-muted);" id="char-count">0/48</span>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: flex-start;">
+                <input id="settings-profile-text" type="text" maxlength="48" placeholder="Например: Frontend-разработчик и ментор" value="${safeProfileText}" style="
+                  flex: 1;
+                  padding: 10px 12px;
+                  border-radius: 10px;
+                  border: 1px solid rgba(255,255,255,0.12);
+                  background: var(--bg-elevated);
+                  color: var(--text-primary);
+                  font-size: 14px;
+                  transition: opacity 0.2s ease;
+                  opacity: ${showProfileText ? '1' : '0.5'};
+                " onInput="SettingsPage.updateCharCount()">
+                <label style="
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  width: 40px;
+                  height: 40px;
+                  border-radius: 10px;
+                  border: 1px solid rgba(255,255,255,0.12);
+                  background: var(--bg-elevated);
+                  cursor: pointer;
+                  transition: all 0.2s ease;
+                ">
+                  <input id="settings-show-profile-text" type="checkbox" ${showProfileText ? 'checked' : ''} style="
+                    display: none;
+                  " onchange="SettingsPage.toggleProfileTextVisibility()">
+                  <span style="font-size: 18px;" id="toggle-icon">${showProfileText ? '✓' : '✗'}</span>
+                </label>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -145,27 +198,34 @@ const AccountPage = (() => {
               </div>
             `
             : `
-              <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                ${badges.map(b => `
-                  <div style="
+              <div style="display: flex; flex-wrap: wrap; gap: 8px;" id="badges-list">
+                ${badges.map((b, idx) => `
+                  <button onclick="SettingsPage.toggleBadgeVisibility(${idx})" style="
                     display: inline-flex;
                     align-items: center;
                     gap: 6px;
                     padding: 8px 10px;
                     border-radius: 999px;
-                    border: 1px solid ${(b.color || '#888')}55;
-                    background: ${(b.color || '#888')}22;
-                    color: ${(b.color || '#888')};
+                    border: 2px solid ${(b.color || '#888')}55;
+                    background: ${(b.visible ? (b.color || '#888') + '22' : 'rgba(100,100,100,0.08)')};
+                    color: ${(b.visible ? (b.color || '#888') : '#666666')};
                     font-size: 13px;
                     font-weight: 600;
-                  ">
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    opacity: ${(b.visible ? '1' : '0.5')};
+                  " title="${(b.visible ? 'Нажмите, чтобы скрыть' : 'Нажмите, чтобы показать')}">
                     <span>${b.icon || '🏷️'}</span>
                     <span>${Card.escapeHtml(b.name || b.code || 'Badge')}</span>
-                  </div>
+                  </button>
                 `).join('')}
               </div>
             `
           }
+
+          <button class="btn btn-primary" style="margin-top: 16px; width: 100%;" onclick="SettingsPage.saveMyProfile()">
+            💾 Сохранить профиль
+          </button>
         </div>
 
         <div class="section">
@@ -183,39 +243,134 @@ const AccountPage = (() => {
           </div>
 
           <div style="display: grid; gap: 8px;">
-            <button class="btn btn-secondary btn-full" onclick="SettingsPage.confirmResetProfile()">
+            <button
+              class="btn btn-full"
+              style="background: rgba(255, 159, 10, 0.12); border: 1px solid rgba(255, 159, 10, 0.45); color: #ffbe5c;"
+              onclick="SettingsPage.confirmResetProfile()"
+            >
               ♻️ Сбросить прогресс профиля
-            </button>
-            <button class="btn btn-danger btn-full" onclick="SettingsPage.confirmDeleteProfile()">
-              🗑 Удалить профиль из приложения
             </button>
           </div>
         </div>
       </div>
     `;
+
+    // Инициализация функций после рендера
+    setTimeout(() => {
+      AccountPage.updateCharCount();
+      AccountPage.toggleProfileTextVisibility();
+    }, 0);
+
+    return html;
   }
 
   async function saveMyProfile() {
     try {
       const firstNameEl = document.getElementById('settings-first-name');
       const lastNameEl = document.getElementById('settings-last-name');
-      const usernameEl = document.getElementById('settings-username');
+      const profileTextEl = document.getElementById('settings-profile-text');
+      const showProfileTextEl = document.getElementById('settings-show-profile-text');
 
       const firstName = (firstNameEl?.value || '').trim();
       const lastName = (lastNameEl?.value || '').trim();
-      const username = (usernameEl?.value || '').trim().replace(/^@+/, '');
+      const profileText = (profileTextEl?.value || '').trim();
+      const showProfileText = !!showProfileTextEl?.checked;
 
       if (!firstName) {
         App.showToast('Имя не может быть пустым', '⚠️');
         return;
       }
 
-      const result = await API.updateMyProfile({ firstName, lastName, username });
-      await App.refreshProfile();
-      App.state.user = { ...(App.state.user || {}), ...result.user };
-      App.showToast(result.message || 'Сохранено', '✅');
+      // Отправляем полную информацию о бейджах (с видимостью)
+      const badges = App.state.user?.badges || [];
+      const fullBadges = badges.map(b => ({
+        code: b.code || (typeof b === 'string' ? b : ''),
+        name: b.name || '',
+        icon: b.icon || '🏷️',
+        color: b.color || '#888',
+        visible: b.visible !== false
+      })).filter(b => b.code); // Фильтруем пустые коды
+
+      const result = await API.updateMyProfile({
+        firstName,
+        lastName,
+        profileText,
+        showProfileText,
+        badges: fullBadges
+      });
+    await App.refreshProfile();
+    App.state.user = { ...(App.state.user || {}), ...result.user };
+    App.showToast(result.message || 'Сохранено', '✅');
+    
+    // Обновляем публичный профиль, если он открыт
+    if (Router.currentPath.startsWith('/user/')) {
+      const userId = App.state.user.id;
+      const html = await renderUserProfile(userId);
+      document.getElementById('content').innerHTML = html;
+    }
     } catch (error) {
       App.showToast(error.message || 'Ошибка сохранения', '❌');
+    }
+  }
+
+  function updateCharCount() {
+    const textEl = document.getElementById('settings-profile-text');
+    const countEl = document.getElementById('char-count');
+    if (textEl && countEl) {
+      countEl.textContent = (textEl.value || '').length + '/48';
+    }
+  }
+
+  function toggleProfileTextVisibility() {
+    const checkboxEl = document.getElementById('settings-show-profile-text');
+    const textEl = document.getElementById('settings-profile-text');
+    const iconEl = document.getElementById('toggle-icon');
+    
+    if (checkboxEl && textEl && iconEl) {
+      const isChecked = checkboxEl.checked;
+      textEl.style.opacity = isChecked ? '1' : '0.5';
+      iconEl.textContent = isChecked ? '✓' : '✗';
+    }
+  }
+
+  function toggleBadgeVisibility(badgeIndex) {
+    // Получаем текущие нормализованные бейджи из профиля
+    const badges = App.state.user?.badges || [];
+    const badge = badges[badgeIndex];
+    
+    if (badge) {
+      // Переключаем видимость
+      badge.visible = !badge.visible;
+      
+      // Перерисовываем список бейджей
+      const badgesList = document.getElementById('badges-list');
+      if (badgesList) {
+        badgesList.innerHTML = badges.map((b, idx) => `
+          <button onclick="SettingsPage.toggleBadgeVisibility(${idx})" style="
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 10px;
+            border-radius: 999px;
+            border: 2px solid ${(b.color || '#888')}55;
+            background: ${(b.visible ? (b.color || '#888') + '22' : 'rgba(100,100,100,0.08)')};
+            color: ${(b.visible ? (b.color || '#888') : '#666666')};
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            opacity: ${(b.visible ? '1' : '0.5')};
+          " title="${(b.visible ? 'Нажмите, чтобы скрыть' : 'Нажмите, чтобы показать')}">
+            <span>${b.icon || '🏷️'}</span>
+            <span>${Card.escapeHtml(b.name || b.code || 'Badge')}</span>
+          </button>
+        `).join('');
+      }
+      
+      // Haptic feedback
+      if (App.tg?.HapticFeedback) {
+        App.tg.HapticFeedback.impactOccurred('light');
+      }
     }
   }
 
@@ -232,24 +387,6 @@ const AccountPage = (() => {
       Router.navigate('/', false);
     } catch (error) {
       App.showToast(error.message || 'Ошибка сброса', '❌');
-    }
-  }
-
-  async function confirmDeleteProfile() {
-    const ok = window.confirm(
-      'Удалить профиль из приложения?\n\nЭто удалит все ваши данные в yourSkills. Telegram-аккаунт не удаляется.'
-    );
-    if (!ok) return;
-
-    try {
-      const result = await API.deleteMyProfile();
-      App.showToast(result.message || 'Профиль удалён', '🗑');
-      API.clearCache();
-      await API.login();
-      await App.refreshProfile();
-      Router.navigate('/', false);
-    } catch (error) {
-      App.showToast(error.message || 'Ошибка удаления', '❌');
     }
   }
 
@@ -389,12 +526,14 @@ const AccountPage = (() => {
     renderSettings,
     renderUserProfile,
     saveMyProfile,
+    updateCharCount,
+    toggleProfileTextVisibility,
+    toggleBadgeVisibility,
     toggleFollow,
     showFollowers,
     showFollowing,
     endorseSkill,
-    confirmResetProfile,
-    confirmDeleteProfile
+    confirmResetProfile
   };
 
 })();
@@ -402,8 +541,10 @@ const AccountPage = (() => {
 const SettingsPage = {
   render: () => AccountPage.renderSettings(),
   saveMyProfile: (...args) => AccountPage.saveMyProfile(...args),
-  confirmResetProfile: (...args) => AccountPage.confirmResetProfile(...args),
-  confirmDeleteProfile: (...args) => AccountPage.confirmDeleteProfile(...args)
+  updateCharCount: (...args) => AccountPage.updateCharCount(...args),
+  toggleProfileTextVisibility: (...args) => AccountPage.toggleProfileTextVisibility(...args),
+  toggleBadgeVisibility: (...args) => AccountPage.toggleBadgeVisibility(...args),
+  confirmResetProfile: (...args) => AccountPage.confirmResetProfile(...args)
 };
 
 const UserProfilePage = {
