@@ -4,6 +4,9 @@
 
 const AccountPage = (() => {
 
+  /** Черновик видимости бейджей в настройках (до «Сохранить профиль») */
+  let settingsBadgesDraft = null;
+
   /**
    * Нормализация бейджей в единый формат
    */
@@ -21,6 +24,33 @@ const AccountPage = (() => {
         visible: b.visible !== false
       };
     });
+  }
+
+  function cloneBadgesForDraft(badges) {
+    return normalizeBadges(badges).map(b => ({ ...b }));
+  }
+
+  function renderBadgesListHtml(badges) {
+    return badges.map((b, idx) => `
+      <button type="button" onclick="SettingsPage.toggleBadgeVisibility(${idx})" style="
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 10px;
+        border-radius: 999px;
+        border: 2px solid ${(b.color || '#888')}55;
+        background: ${(b.visible ? (b.color || '#888') + '22' : 'rgba(100,100,100,0.08)')};
+        color: ${(b.visible ? (b.color || '#888') : '#666666')};
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        opacity: ${(b.visible ? '1' : '0.5')};
+      " title="${(b.visible ? 'Нажмите, чтобы скрыть' : 'Нажмите, чтобы показать')} (сохраните профиль)">
+        <span>${b.icon || '🏷️'}</span>
+        <span>${Card.escapeHtml(b.name || b.code || 'Badge')}</span>
+      </button>
+    `).join('');
   }
 
   /**
@@ -98,15 +128,9 @@ const AccountPage = (() => {
     const rawBadges = Array.isArray(user.badgesAll)
       ? user.badgesAll
       : (Array.isArray(user.badges) ? user.badges : []);
-    let badges = rawBadges;
-
-    // Нормализуем бейджи
-    badges = normalizeBadges(badges);
-    
-    // Сохраняем нормализованные бейджи в App.state для toggleBadgeVisibility
-    if (App.state.user) {
-      App.state.user.badges = badges;
-    }
+    // Черновик только для экрана настроек — в App.state и на карточке не трогаем до сохранения
+    settingsBadgesDraft = cloneBadgesForDraft(rawBadges);
+    const badges = settingsBadgesDraft;
     
     const safeFirstName = Card.escapeHtml(user.firstName || '');
     const safeLastName = Card.escapeHtml(user.lastName || '');
@@ -199,26 +223,7 @@ const AccountPage = (() => {
             `
             : `
               <div style="display: flex; flex-wrap: wrap; gap: 8px;" id="badges-list">
-                ${badges.map((b, idx) => `
-                  <button onclick="SettingsPage.toggleBadgeVisibility(${idx})" style="
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 6px;
-                    padding: 8px 10px;
-                    border-radius: 999px;
-                    border: 2px solid ${(b.color || '#888')}55;
-                    background: ${(b.visible ? (b.color || '#888') + '22' : 'rgba(100,100,100,0.08)')};
-                    color: ${(b.visible ? (b.color || '#888') : '#666666')};
-                    font-size: 13px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                    opacity: ${(b.visible ? '1' : '0.5')};
-                  " title="${(b.visible ? 'Нажмите, чтобы скрыть' : 'Нажмите, чтобы показать')}">
-                    <span>${b.icon || '🏷️'}</span>
-                    <span>${Card.escapeHtml(b.name || b.code || 'Badge')}</span>
-                  </button>
-                `).join('')}
+                ${renderBadgesListHtml(badges)}
               </div>
             `
           }
@@ -281,8 +286,7 @@ const AccountPage = (() => {
         return;
       }
 
-      // Отправляем полную информацию о бейджах (с видимостью)
-      const badges = App.state.user?.badges || [];
+      const badges = settingsBadgesDraft || [];
       const fullBadges = badges.map(b => ({
         code: b.code || (typeof b === 'string' ? b : ''),
         name: b.name || '',
@@ -298,16 +302,20 @@ const AccountPage = (() => {
         showProfileText,
         badges: fullBadges
       });
-    await App.refreshProfile();
-    App.state.user = { ...(App.state.user || {}), ...result.user };
-    App.showToast(result.message || 'Сохранено', '✅');
-    
-    // Обновляем публичный профиль, если он открыт
-    if (Router.currentPath.startsWith('/user/')) {
-      const userId = App.state.user.id;
-      const html = await renderUserProfile(userId);
-      document.getElementById('content').innerHTML = html;
-    }
+      API.clearCache();
+      await App.refreshProfile();
+      App.state.user = { ...(App.state.user || {}), ...result.user };
+      const savedAll = result.user?.badgesAll || result.user?.badges;
+      if (savedAll) {
+        settingsBadgesDraft = cloneBadgesForDraft(savedAll);
+      }
+      App.showToast(result.message || 'Сохранено', '✅');
+
+      if (Router.currentPath.startsWith('/user/')) {
+        const userId = App.state.user.id;
+        const html = await renderUserProfile(userId);
+        document.getElementById('content').innerHTML = html;
+      }
     } catch (error) {
       App.showToast(error.message || 'Ошибка сохранения', '❌');
     }
@@ -334,43 +342,18 @@ const AccountPage = (() => {
   }
 
   function toggleBadgeVisibility(badgeIndex) {
-    // Получаем текущие нормализованные бейджи из профиля
-    const badges = App.state.user?.badges || [];
-    const badge = badges[badgeIndex];
-    
-    if (badge) {
-      // Переключаем видимость
-      badge.visible = !badge.visible;
-      
-      // Перерисовываем список бейджей
-      const badgesList = document.getElementById('badges-list');
-      if (badgesList) {
-        badgesList.innerHTML = badges.map((b, idx) => `
-          <button onclick="SettingsPage.toggleBadgeVisibility(${idx})" style="
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 8px 10px;
-            border-radius: 999px;
-            border: 2px solid ${(b.color || '#888')}55;
-            background: ${(b.visible ? (b.color || '#888') + '22' : 'rgba(100,100,100,0.08)')};
-            color: ${(b.visible ? (b.color || '#888') : '#666666')};
-            font-size: 13px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            opacity: ${(b.visible ? '1' : '0.5')};
-          " title="${(b.visible ? 'Нажмите, чтобы скрыть' : 'Нажмите, чтобы показать')}">
-            <span>${b.icon || '🏷️'}</span>
-            <span>${Card.escapeHtml(b.name || b.code || 'Badge')}</span>
-          </button>
-        `).join('');
-      }
-      
-      // Haptic feedback
-      if (App.tg?.HapticFeedback) {
-        App.tg.HapticFeedback.impactOccurred('light');
-      }
+    const badges = settingsBadgesDraft;
+    if (!badges || !badges[badgeIndex]) return;
+
+    badges[badgeIndex].visible = !badges[badgeIndex].visible;
+
+    const badgesList = document.getElementById('badges-list');
+    if (badgesList) {
+      badgesList.innerHTML = renderBadgesListHtml(badges);
+    }
+
+    if (App.tg?.HapticFeedback) {
+      App.tg.HapticFeedback.impactOccurred('light');
     }
   }
 

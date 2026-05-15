@@ -106,8 +106,9 @@ function buildProfile(userId, viewerId) {
     visible: b.visible !== false
   });
 
-  // На карточке профиля: владелец видит все свои бейджи; остальные — только с visible
-  const badgeDetails = (userId === viewerId ? normalizedBadges : normalizedBadges.filter(b => b.visible !== false))
+  // На карточке профиля — только видимые бейджи (как у других пользователей)
+  const badgeDetails = normalizedBadges
+    .filter(b => b.visible !== false)
     .map(mapBadgeToClient);
 
   const userPayload = {
