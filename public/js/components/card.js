@@ -87,8 +87,8 @@ const Card = (() => {
         </div>
       </div>
 
-      <!-- ======== КНОПКИ ДЕЙСТВИЙ (для чужого профиля) ======== -->
-      ${!user.isOwn ? renderProfileActions(user, social) : ''}
+        <!-- ======== КНОПКИ ДЕЙСТВИЙ ======== -->
+      ${renderProfileActions(user, social)}
 
       <!-- ======== НАВЫКИ ПО КАТЕГОРИЯМ ======== -->
       ${renderCategoriesSection(categories, user.isOwn)}
@@ -199,14 +199,26 @@ const Card = (() => {
   }
 
 
-   /**
-   * Кнопки подписки / подтверждения / сообщения на чужом профиле
+    /**
+   * Кнопки действий: для своего профиля — «Сообщения»,
+   * для чужого — «Подписаться» + «Написать» (при взаимной подписке)
    */
   function renderProfileActions(user, social) {
+    // Свой профиль — кнопка перехода к диалогам
     if (user?.isOwn || (App.state.user && user?.id === App.state.user.id)) {
-      return '';
+      return `
+        <div class="profile-actions" style="display: flex; gap: 8px; margin-bottom: 16px;">
+          <button
+            class="btn btn-primary btn-full"
+            onclick="Router.navigate('/messages')"
+          >
+            ✉️ Мои сообщения
+          </button>
+        </div>
+      `;
     }
 
+    // Чужой профиль
     const isFollowing = social?.isFollowing;
     const mutualFollow = social?.mutualFollow;
 
