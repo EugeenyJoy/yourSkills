@@ -582,10 +582,79 @@ bot.on('error', (error) => {
   console.error('❌ Ошибка бота:', error.message);
 });
 
+// ============================================
+// ХЕЛПЕР: уведомление о новом личном сообщении
+// ============================================
+// Шлём пользователю личку от бота.
+// Проверку online/offline делает routes/messages.js.
+// Здесь только антиспам + отправка.
+// ============================================
+
+// Антиспам-кэш: ключ "fromId->toId" → timestamp последней отправки
+const _msgNotifyCache = new Map();
+const NOTIFY_COOLDOWN_MS = 2 * 60 * 1000; // не чаще 1 раза в 2 мин на пару
+
+/**
+ * Отправляет получателю Telegram-уведомление о новом сообщении.
+ *
+ * @param {number} toUserId    — ID получателя
+ * @param {object} fromUser    — { id, first_name, username }
+ * @param {string} messageText — текст сообщения для превью
+ */
+async function notifyNewMessage(toUserId, fromUser, messageText) {
+  try {
+    const cacheKey = `${fromUser.id}->${toUserId}`;
+    const lastNotify = _msgNotifyCache.get(cacheKey) || 0;
+    if (Date.now() - lastNotify < NOTIFY_COOLDOWN_MS) {
+      return;
+    }
+    _msgNotifyCache.set(cacheKey, Date.now());
+
+    const preview = messageText.length > 100
+      ? messageText.slice(0, 100) + '…'
+      : messageText;
+
+    const safeName = escapeMd(fromUser.first_name || 'Кто-то');
+    const safePreview = escapeMd(preview);
+
+    const text = [
+      `💬 *Новое сообщение от ${safeName}*`,
+      '',
+      `_${safePreview}_`,
+      '',
+      'Открой приложение чтобы ответить 👇'
+    ].join('\n');
+
+    await bot.sendMessage(toUserId, text, {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [[
+          { text: '💬 Открыть чат', web_app: { url: APP_URL } }
+        ]]
+      }
+    });
+
+  } catch (err) {
+    if (err.response?.statusCode === 403) {
+      console.log(`👤 Пользователь ${toUserId} заблокировал бота`);
+    } else {
+      console.error('❌ Ошибка notifyNewMessage:', err.message);
+    }
+  }
+}
+
+/**
+ * Экранирование символов Markdown
+ */
+function escapeMd(text) {
+  return String(text).replace(/([_*`\[])/g, '\\$1');
+}
+
+// Делаем хелпер доступным извне
+bot.notifyNewMessage = notifyNewMessage;
+
 
 // ============================================
-// Экспортируем бота
-// (на случай если понадобится в других модулях)
+// Экспорт
 // ============================================
-
 module.exports = bot;

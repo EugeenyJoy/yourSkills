@@ -315,6 +315,44 @@ if (process.env.NODE_ENV === 'development') {
   });
 }
 
+// ====================================================================
+// Обновляем last_seen_at для авторизованных запросов.
+// Делаем это лениво: только если прошло > 30 сек с прошлого апдейта,
+// чтобы не дёргать БД на каждом чихе.
+// ====================================================================
+app.use((req, res, next) => {
+  // Дёргаем апдейт last_seen только на API-запросах
+  if (!req.path.startsWith('/api/')) return next();
+
+  try {
+    const initData = req.headers['x-telegram-init-data'] || '';
+    // В DEV validateTelegramData вернёт мок даже без initData,
+    // в проде — только при валидной подписи
+    const user = app.validateTelegramData(initData);
+
+    if (user && user.id) {
+      const now = Date.now();
+      if (!app.locals._lastSeenCache) app.locals._lastSeenCache = new Map();
+      const cache = app.locals._lastSeenCache;
+      const prev = cache.get(user.id) || 0;
+
+      if (now - prev > 30 * 1000) {
+        cache.set(user.id, now);
+        try {
+          db.prepare(
+            "UPDATE users SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?"
+          ).run(user.id);
+        } catch (e) {
+          console.error('[last_seen] db error:', e.message);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[last_seen] middleware error:', e.message);
+  }
+  next();
+});
+
 // ============================================
 // СТАТИЧЕСКИЕ ФАЙЛЫ
 // ============================================
@@ -330,6 +368,17 @@ app.use(express.static(path.join(__dirname, 'public'), {
   index: 'index.html'
 }));
 
+// ============================================
+// Регистрируем хелпер уведомлений из bot.js
+// Делаем доступным для routes через req.app.get(...)
+// ============================================
+const bot = require('./bot');
+if (bot && typeof bot.notifyNewMessage === 'function') {
+  app.set('notifyNewMessage', bot.notifyNewMessage.bind(bot));
+  console.log('✅ notifyNewMessage зарегистрирован');
+} else {
+  console.warn('⚠️  notifyNewMessage недоступен — уведомлений не будет');
+}
 
 // ============================================
 // МАРШРУТЫ API
@@ -345,6 +394,7 @@ app.use('/api/endorsements', require('./routes/endorsements'));
 app.use('/api/streaks',      require('./routes/streaks'));
 app.use('/api/feed',         require('./routes/feed'));
 app.use('/api/admin',        require('./routes/admin'));
+app.use('/api/messages',     require('./routes/messages'));
 
 
 // ============================================
@@ -393,8 +443,6 @@ app.use((err, req, res, next) => {
 // Подключаем Telegram бота
 // Он будет работать параллельно с сервером
 // ============================================
-
-require('./bot');
 
 // ============================================
 // ЗАПУСК

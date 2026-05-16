@@ -188,6 +188,10 @@ if (!userColumns.includes('show_profile_text')) {
   db.exec("ALTER TABLE users ADD COLUMN show_profile_text INTEGER DEFAULT 0");
 }
 
+if (!userColumns.includes('last_seen_at')) {
+  db.exec("ALTER TABLE users ADD COLUMN last_seen_at DATETIME DEFAULT NULL");
+}
+
 // Мета-приложения (одноразовые миграции)
 db.exec(`
   CREATE TABLE IF NOT EXISTS app_meta (
@@ -208,6 +212,37 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
   CREATE INDEX IF NOT EXISTS idx_user_badges_user ON user_badges(user_id);
+`);
+
+// ============================================
+// СООБЩЕНИЯ (личная переписка)
+// ============================================
+// Правила:
+//   - Только при взаимной подписке
+//   - Максимум 20 сообщений в диалоге (общий лимит)
+//   - При 21-м самое старое удаляется
+//   - Антиспам: не больше 2 сообщений подряд без ответа
+//   - Прочитанность как в TG (точка у непрочитанных)
+// ============================================
+db.exec(`
+  CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dialog_key TEXT NOT NULL,
+    from_user_id INTEGER NOT NULL,
+    to_user_id INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (from_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (to_user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_messages_dialog
+    ON messages(dialog_key, created_at);
+  CREATE INDEX IF NOT EXISTS idx_messages_to_unread
+    ON messages(to_user_id, is_read);
+  CREATE INDEX IF NOT EXISTS idx_messages_from
+    ON messages(from_user_id);
 `);
 
 const BADGE_KEYS_MIGRATION = new Set([
