@@ -44,21 +44,18 @@ const MessagesPage = (() => {
     const radius = mine ? '14px 14px 4px 14px' : '14px 14px 14px 4px';
     const timeColor = mine ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)';
 
-    const readIndicator = mine ? `
-        <span
+    const readIndicator = (mine && !m.is_read) ? `
+    <span
         class="msg-read-dot"
-        data-read="${m.is_read ? '1' : '0'}"
-        title="${m.is_read ? 'Прочитано' : 'Отправлено'}"
+        title="Отправлено"
         style="
-            flex-shrink:0;
-            width:10px;height:10px;
-            border-radius:50%;
-            border:1.5px solid rgba(255,255,255,0.85);
-            background:${m.is_read ? 'rgba(255,255,255,0.95)' : 'transparent'};
-            margin-bottom:2px;
-            transition:background 0.15s ease;
+        flex-shrink:0;
+        width:6px;height:6px;
+        border-radius:50%;
+        background:rgba(255,255,255,0.9);
+        margin-bottom:4px;
         "
-        ></span>
+    ></span>
     ` : '';
 
     return `
@@ -295,7 +292,9 @@ const MessagesPage = (() => {
           </div>
 
           <!-- Подвал -->
-          ${footer}
+            <div id="msg-footer" data-state="${!mutual ? 'no-mutual' : !canSend ? 'wait' : 'input'}">
+                ${footer}
+            </div>
         </div>
       `;
     } catch (err) {
@@ -383,69 +382,117 @@ const MessagesPage = (() => {
     }
 
     async function pollTick(userId) {
-    // Если экран чата исчез (юзер ушёл) — глушим
-    const list = document.getElementById('messages-list');
-    if (!list || pollUserId !== userId) {
-        stopPolling();
-        return;
+        // Если экран чата исчез (юзер ушёл) — глушим
+        const list = document.getElementById('messages-list');
+        if (!list || pollUserId !== userId) {
+            stopPolling();
+            return;
+        }
+
+        // Если вкладка скрыта — не дёргаем сервер
+        if (document.hidden) return;
+
+        try {
+            const data = await API.getMessagesWith(userId);
+            const messages = data.messages || [];
+            const myId = App.state.user?.id;
+
+            // Проверяем ещё раз, что мы всё ещё в этом диалоге
+            const stillHere = document.getElementById('messages-list');
+            if (!stillHere || pollUserId !== userId) return;
+
+            // 1. Дорисовываем новые сообщения
+            const newOnes = messages.filter(m => m.id > lastMessageId);
+            if (newOnes.length) {
+                const wasAtBottom =
+                    stillHere.scrollHeight - stillHere.scrollTop - stillHere.clientHeight < 80;
+
+                const html = newOnes.map(m => messageHtml(m, myId)).join('');
+                stillHere.insertAdjacentHTML('beforeend', html);
+                lastMessageId = Math.max(...newOnes.map(m => m.id));
+
+                if (wasAtBottom) {
+                    stillHere.scrollTop = stillHere.scrollHeight;
+                }
+
+                if (newOnes.some(m => m.to_user_id === myId)) {
+                    API.markMessagesRead(userId).catch(() => {});
+                }
+            }
+
+            // 2. Убираем кружок «непрочитано» на своих сообщениях, которые уже прочитаны
+            for (const m of messages) {
+                if (m.from_user_id !== myId) continue;
+                if (!m.is_read) continue;
+
+                const dot = stillHere.querySelector(
+                    `.msg-row[data-msg-id="${m.id}"] .msg-read-dot`
+                );
+                if (dot) dot.remove();
+            }
+
+            // 3. Обновляем футер, если изменились права на отправку
+            updateFooter(userId, !!data.can_send, !!data.mutual_follow);
+
+        } catch (err) {
+            console.warn('poll error:', err.message);
+        }
     }
 
-    // Если вкладка скрыта — не дёргаем сервер
-    if (document.hidden) return;
+    function updateFooter(userId, canSend, mutual) {
+        const footer = document.getElementById('msg-footer');
+        if (!footer) return;
 
-    try {
-        const data = await API.getMessagesWith(userId);
-        const messages = data.messages || [];
-        const myId = App.state.user?.id;
+        // Текущее состояние определяем по наличию input'а
+        const hasInput = !!document.getElementById('msg-input');
+        const desiredState = !mutual ? 'no-mutual'
+                            : !canSend ? 'wait'
+                            : 'input';
+        const currentState = footer.getAttribute('data-state');
 
-        // Проверяем ещё раз, что мы всё ещё в этом диалоге
-        const stillHere = document.getElementById('messages-list');
-        if (!stillHere || pollUserId !== userId) return;
+        if (currentState === desiredState) return; // ничего не менялось
 
-        // 1. Дорисовываем новые сообщения
-        const newOnes = messages.filter(m => m.id > lastMessageId);
-        if (newOnes.length) {
-        // Был ли пользователь внизу до вставки?
-        const wasAtBottom =
-            stillHere.scrollHeight - stillHere.scrollTop - stillHere.clientHeight < 80;
+        footer.setAttribute('data-state', desiredState);
 
-        const html = newOnes.map(m => messageHtml(m, myId)).join('');
-        stillHere.insertAdjacentHTML('beforeend', html);
-        lastMessageId = Math.max(...newOnes.map(m => m.id));
-
-        if (wasAtBottom) {
-            stillHere.scrollTop = stillHere.scrollHeight;
+        if (desiredState === 'no-mutual') {
+            footer.innerHTML = `
+            <div style="padding:12px;background:var(--bg-card);border-radius:12px;color:var(--text-muted);text-align:center;font-size:14px;">
+                Для переписки нужна взаимная подписка
+            </div>
+            `;
+        } else if (desiredState === 'wait') {
+            footer.innerHTML = `
+            <div style="padding:12px;background:var(--bg-card);border-radius:12px;color:var(--text-muted);text-align:center;font-size:14px;">
+                ⏳ Дождитесь ответа собеседника
+            </div>
+            `;
+        } else {
+            footer.innerHTML = `
+            <div style="display:flex;gap:8px;align-items:flex-end;">
+                <textarea
+                id="msg-input"
+                placeholder="Сообщение..."
+                maxlength="2000"
+                rows="1"
+                oninput="MessagesPage.autoGrow(this)"
+                style="
+                    flex:1;background:var(--bg-card);color:var(--text-primary);
+                    border:none;border-radius:18px;padding:10px 14px;
+                    font-size:15px;resize:none;max-height:120px;outline:none;
+                    font-family:inherit;
+                "></textarea>
+                <button
+                onclick="MessagesPage.send(${userId})"
+                style="
+                    background:var(--accent);color:#fff;border:none;
+                    border-radius:50%;width:40px;height:40px;
+                    cursor:pointer;font-size:18px;flex-shrink:0;
+                "
+                >➤</button>
+            </div>
+            `;
         }
-
-        // Среди новых есть входящие → помечаем прочитанными
-        if (newOnes.some(m => m.to_user_id === myId)) {
-            API.markMessagesRead(userId).catch(() => {});
         }
-        }
-
-        // 2. Обновляем статус прочтения на своих сообщениях
-        // (бэк не возвращает изменения отдельно — просто синкаем по data-атрибутам)
-        for (const m of messages) {
-        if (m.from_user_id !== myId) continue;
-        const dot = stillHere.querySelector(
-            `.msg-row[data-msg-id="${m.id}"] .msg-read-dot`
-        );
-        if (!dot) continue;
-        const currentRead = dot.getAttribute('data-read') === '1';
-        const serverRead = !!m.is_read;
-        if (currentRead !== serverRead) {
-            dot.setAttribute('data-read', serverRead ? '1' : '0');
-            dot.style.background = serverRead
-            ? 'rgba(255,255,255,0.95)'
-            : 'transparent';
-            dot.setAttribute('title', serverRead ? 'Прочитано' : 'Отправлено');
-        }
-        }
-    } catch (err) {
-        // Тихо игнорим — следующий тик попробует ещё раз
-        console.warn('poll error:', err.message);
-    }
-    }
 
     return {
         // Главный entry-point под стиль роутера
