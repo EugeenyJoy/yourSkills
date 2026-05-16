@@ -316,7 +316,59 @@ const API = (() => {
     const result = await request(`/feed/${eventId}/react`, {
       method: 'DELETE'
     });
+
     return result;
+  }
+
+   // ==========================================
+  // СООБЩЕНИЯ
+  // ==========================================
+
+  /**
+   * Список диалогов текущего пользователя
+   * GET /api/messages/dialogs
+   */
+  async function getDialogs() {
+    return request('/messages/dialogs');
+  }
+
+  /**
+   * Переписка с конкретным пользователем
+   * GET /api/messages/with/:userId
+   *
+   * Ответ содержит: messages, mutual_follow, can_send, user (другая сторона)
+   */
+  async function getMessagesWith(userId, page = 0) {
+    return request(`/messages/with/${userId}?page=${page}`);
+  }
+
+  /**
+   * Отправить сообщение
+   * POST /api/messages/with/:userId
+   */
+  async function sendMessage(userId, text) {
+    return request(`/messages/with/${userId}`, {
+      method: 'POST',
+      body: { text }
+    });
+  }
+
+  /**
+   * Пометить все сообщения от пользователя прочитанными
+   * POST /api/messages/with/:userId/read
+   */
+  async function markMessagesRead(userId) {
+    return request(`/messages/with/${userId}/read`, {
+      method: 'POST'
+    });
+  }
+
+  /**
+   * Счётчик непрочитанных
+   * GET /api/messages/unread-count
+   */
+  async function getUnreadCount() {
+    return request('/messages/unread-count');
   }
 
   // ==========================================
@@ -340,6 +392,13 @@ const API = (() => {
     searchUsers,
     getTopUsers,
     resetMyProfile,
+
+    // Сообщения
+    getDialogs,
+    getMessagesWith,
+    sendMessage,
+    markMessagesRead,
+    getUnreadCount,
 
     // Навыки
     getCatalog,

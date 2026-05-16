@@ -199,8 +199,8 @@ const Card = (() => {
   }
 
 
-  /**
-   * Кнопки подписки / подтверждения на чужом профиле
+   /**
+   * Кнопки подписки / подтверждения / сообщения на чужом профиле
    */
   function renderProfileActions(user, social) {
     if (user?.isOwn || (App.state.user && user?.id === App.state.user.id)) {
@@ -208,6 +208,19 @@ const Card = (() => {
     }
 
     const isFollowing = social?.isFollowing;
+    const mutualFollow = social?.mutualFollow;
+
+    const messageBtn = mutualFollow
+      ? `
+        <button
+          class="btn btn-secondary btn-full"
+          onclick="Router.navigate('/messages/${user.id}')"
+          title="Написать сообщение"
+        >
+          ✉️ Написать
+        </button>
+      `
+      : '';
 
     return `
       <div class="profile-actions" style="display: flex; gap: 8px; margin-bottom: 16px;">
@@ -217,6 +230,7 @@ const Card = (() => {
         >
           ${isFollowing ? '✓ Вы подписаны' : '+ Подписаться'}
         </button>
+        ${messageBtn}
       </div>
     `;
   }

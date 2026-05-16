@@ -104,6 +104,19 @@ const App = (() => {
       return await SkillDetailPage.render(params.id);
     }, null);
 
+    // Список диалогов
+    Router.addRoute('/messages', async () => {
+      return await MessagesPage.render();
+    }, null);
+
+    // Конкретный диалог
+    Router.addRoute('/messages/:id', async (params) => {
+      const html = await MessagesPage.renderDialog(params.id);
+      // Авто-скролл вниз после вставки в DOM
+      setTimeout(() => MessagesPage.scrollToBottom(), 0);
+      return html;
+    }, null);
+
     console.log('🛤️ Маршруты зарегистрированы');
   }
 

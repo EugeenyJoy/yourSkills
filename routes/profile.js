@@ -85,6 +85,15 @@ function buildProfile(userId, viewerId) {
       ).get(viewerId, userId)
     : false;
 
+  // Подписан ли ОН на меня (для определения взаимной подписки)
+  const followsMe = viewerId !== userId
+    ? !!db.prepare(
+        'SELECT id FROM follows WHERE follower_id = ? AND following_id = ?'
+      ).get(userId, viewerId)
+    : false;
+
+  const mutualFollow = isFollowing && followsMe;
+
   // Статистика
   const totalCheckins = db.prepare(
     'SELECT COUNT(*) as c FROM checkins WHERE user_id = ?'
@@ -140,7 +149,7 @@ function buildProfile(userId, viewerId) {
       id: a.id, code: a.code, name: a.name,
       description: a.description, icon: a.icon, rarity: a.rarity,
     })),
-    social: { followers, following, isFollowing },
+    social: { followers, following, isFollowing, followsMe, mutualFollow },
     stats: {
       totalSkills: skills.length,
       totalCheckins,
