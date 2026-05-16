@@ -33,6 +33,67 @@ const MessagesPage = (() => {
     return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
   }
 
+  // HTML одного сообщения (используется и в первичном рендере, и при polling)
+    function messageHtml(m, myId) {
+    const mine = m.from_user_id === myId;
+    const text = escapeHtml(m.text);
+    const time = formatTime(m.created_at);
+    const bg = mine ? 'var(--accent)' : 'var(--bg-card)';
+    const color = mine ? '#fff' : 'var(--text-primary)';
+    const align = mine ? 'flex-end' : 'flex-start';
+    const radius = mine ? '14px 14px 4px 14px' : '14px 14px 14px 4px';
+    const timeColor = mine ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)';
+
+    const readIndicator = mine ? `
+        <span
+        class="msg-read-dot"
+        data-read="${m.is_read ? '1' : '0'}"
+        title="${m.is_read ? 'Прочитано' : 'Отправлено'}"
+        style="
+            flex-shrink:0;
+            width:10px;height:10px;
+            border-radius:50%;
+            border:1.5px solid rgba(255,255,255,0.85);
+            background:${m.is_read ? 'rgba(255,255,255,0.95)' : 'transparent'};
+            margin-bottom:2px;
+            transition:background 0.15s ease;
+        "
+        ></span>
+    ` : '';
+
+    return `
+        <div class="msg-row" data-msg-id="${m.id}" style="display:flex;justify-content:${align};margin-bottom:6px;">
+        <div style="
+            max-width:75%;
+            background:${bg};
+            color:${color};
+            padding:8px 12px;
+            border-radius:${radius};
+            word-wrap:break-word;
+            overflow-wrap:break-word;
+            white-space:pre-wrap;
+            display:inline-flex;
+            align-items:flex-end;
+            gap:8px;
+            font-size:15px;
+            line-height:1.4;
+        ">
+            <span>${text}</span>
+            <span style="
+            font-size:11px;
+            color:${timeColor};
+            flex-shrink:0;
+            margin-bottom:1px;
+            white-space:nowrap;
+            display:inline-flex;
+            align-items:center;
+            gap:4px;
+            ">${time}${readIndicator}</span>
+        </div>
+        </div>
+    `;
+    }
+
   function fullName(u) {
     if (!u) return 'Пользователь';
     return escapeHtml([u.first_name, u.last_name].filter(Boolean).join(' ') || u.username || 'Без имени');
@@ -58,6 +119,7 @@ const MessagesPage = (() => {
   // ==========================================
 
   async function renderDialogsList() {
+    stopPolling(); // выходим из диалога — глушим
     try {
       const data = await API.getDialogs();
       const dialogs = data.dialogs || [];
@@ -145,6 +207,9 @@ const MessagesPage = (() => {
     try {
       const data = await API.getMessagesWith(userId);
 
+      // Стартуем polling новых сообщений
+      startPolling(userId, data.messages || []);
+
       // Помечаем прочитанным (fire-and-forget)
       API.markMessagesRead(userId).catch(() => {});
 
@@ -160,29 +225,7 @@ const MessagesPage = (() => {
         ? `<div style="text-align:center;color:var(--text-muted);padding:32px 16px;font-size:14px;">
              Сообщений пока нет. Напишите первым 👋
            </div>`
-        : messages.map(m => {
-            const mine = m.from_user_id === myId;
-            const text = escapeHtml(m.text);
-            const time = formatTime(m.created_at);
-            const bg = mine ? 'var(--accent)' : 'var(--bg-card)';
-            const color = mine ? '#fff' : 'var(--text-primary)';
-            const align = mine ? 'flex-end' : 'flex-start';
-            const radius = mine ? '14px 14px 4px 14px' : '14px 14px 14px 4px';
-            return `
-              <div style="display:flex;justify-content:${align};margin-bottom:6px;">
-                <div style="
-                  max-width:75%;background:${bg};color:${color};
-                  padding:8px 12px;border-radius:${radius};
-                  word-wrap:break-word;white-space:pre-wrap;
-                ">
-                  <div style="font-size:15px;line-height:1.4;">${text}</div>
-                  <div style="
-                    font-size:11px;opacity:0.7;margin-top:2px;text-align:right;
-                  ">${time}</div>
-                </div>
-              </div>
-            `;
-          }).join('');
+            : messages.map(m => messageHtml(m, myId)).join('');
 
       // Подвал — поле ввода или плашка
       let footer = '';
@@ -280,26 +323,26 @@ const MessagesPage = (() => {
     if (btn) btn.disabled = true;
 
     try {
-      await API.sendMessage(userId, text);
-      input.value = '';
-      autoGrow(input);
+        await API.sendMessage(userId, text);
+        input.value = '';
+        autoGrow(input);
 
-      if (App.tg?.HapticFeedback) {
+        if (App.tg?.HapticFeedback) {
         App.tg.HapticFeedback.impactOccurred('light');
-      }
+        }
 
-      // Перерисовываем диалог
-      const html = await renderDialog(userId);
-      document.getElementById('content').innerHTML = html;
+        // Перерисовываем диалог (startPolling вызовется внутри renderDialog)
+        stopPolling();
+        const html = await renderDialog(userId);
+        document.getElementById('content').innerHTML = html;
 
-      // Прокручиваем вниз
-      const list = document.getElementById('messages-list');
-      if (list) list.scrollTop = list.scrollHeight;
+        const list = document.getElementById('messages-list');
+        if (list) list.scrollTop = list.scrollHeight;
     } catch (err) {
-      App.showToast(err.message || 'Не удалось отправить', '❌');
-      if (btn) btn.disabled = false;
+        App.showToast(err.message || 'Не удалось отправить', '❌');
+        if (btn) btn.disabled = false;
     }
-  }
+    }
 
   // ==========================================
   // Авто-скролл вниз после рендера
@@ -310,6 +353,100 @@ const MessagesPage = (() => {
     if (list) list.scrollTop = list.scrollHeight;
   }
 
+  // ==========================================
+    // Polling новых сообщений в открытом диалоге
+    // ==========================================
+
+    let pollTimer = null;
+    let pollUserId = null;
+    let lastMessageId = 0;
+
+    const POLL_INTERVAL_MS = 4000;
+
+    function stopPolling() {
+    if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+    }
+    pollUserId = null;
+    lastMessageId = 0;
+    }
+
+    function startPolling(userId, initialMessages) {
+    stopPolling();
+    pollUserId = userId;
+    lastMessageId = initialMessages.length
+        ? Math.max(...initialMessages.map(m => m.id))
+        : 0;
+
+    pollTimer = setInterval(() => pollTick(userId), POLL_INTERVAL_MS);
+    }
+
+    async function pollTick(userId) {
+    // Если экран чата исчез (юзер ушёл) — глушим
+    const list = document.getElementById('messages-list');
+    if (!list || pollUserId !== userId) {
+        stopPolling();
+        return;
+    }
+
+    // Если вкладка скрыта — не дёргаем сервер
+    if (document.hidden) return;
+
+    try {
+        const data = await API.getMessagesWith(userId);
+        const messages = data.messages || [];
+        const myId = App.state.user?.id;
+
+        // Проверяем ещё раз, что мы всё ещё в этом диалоге
+        const stillHere = document.getElementById('messages-list');
+        if (!stillHere || pollUserId !== userId) return;
+
+        // 1. Дорисовываем новые сообщения
+        const newOnes = messages.filter(m => m.id > lastMessageId);
+        if (newOnes.length) {
+        // Был ли пользователь внизу до вставки?
+        const wasAtBottom =
+            stillHere.scrollHeight - stillHere.scrollTop - stillHere.clientHeight < 80;
+
+        const html = newOnes.map(m => messageHtml(m, myId)).join('');
+        stillHere.insertAdjacentHTML('beforeend', html);
+        lastMessageId = Math.max(...newOnes.map(m => m.id));
+
+        if (wasAtBottom) {
+            stillHere.scrollTop = stillHere.scrollHeight;
+        }
+
+        // Среди новых есть входящие → помечаем прочитанными
+        if (newOnes.some(m => m.to_user_id === myId)) {
+            API.markMessagesRead(userId).catch(() => {});
+        }
+        }
+
+        // 2. Обновляем статус прочтения на своих сообщениях
+        // (бэк не возвращает изменения отдельно — просто синкаем по data-атрибутам)
+        for (const m of messages) {
+        if (m.from_user_id !== myId) continue;
+        const dot = stillHere.querySelector(
+            `.msg-row[data-msg-id="${m.id}"] .msg-read-dot`
+        );
+        if (!dot) continue;
+        const currentRead = dot.getAttribute('data-read') === '1';
+        const serverRead = !!m.is_read;
+        if (currentRead !== serverRead) {
+            dot.setAttribute('data-read', serverRead ? '1' : '0');
+            dot.style.background = serverRead
+            ? 'rgba(255,255,255,0.95)'
+            : 'transparent';
+            dot.setAttribute('title', serverRead ? 'Прочитано' : 'Отправлено');
+        }
+        }
+    } catch (err) {
+        // Тихо игнорим — следующий тик попробует ещё раз
+        console.warn('poll error:', err.message);
+    }
+    }
+
     return {
         // Главный entry-point под стиль роутера
         render: renderDialogsList,
@@ -318,7 +455,8 @@ const MessagesPage = (() => {
         // Внутренние действия (вызываются из onclick)
         send,
         autoGrow,
-        scrollToBottom
+        scrollToBottom,
+        stopPolling
     };
 
 })();
