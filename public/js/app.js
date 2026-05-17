@@ -131,7 +131,7 @@ const App = (() => {
       const data = await API.login();
 
       // Сохраняем в состояние
-      state.user = data.user;
+      state.user = { ...data.user, isOwn: true };
       state.skills = data.skills;
       state.categories = data.categories;
       state.stats = data.stats;
@@ -306,7 +306,8 @@ const App = (() => {
       API.clearCache();
       const data = await API.login();
 
-      state.user = data.user;
+      state.user = { ...data.user, isOwn: true, __mark: 'AUTH_309' };
+      console.log('[AUTH] set user', state.user);
       state.skills = data.skills;
       state.categories = data.categories;
       state.stats = data.stats;

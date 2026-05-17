@@ -7,7 +7,6 @@
 //
 // Механика:
 // — Большая кнопка 🔥 для каждого навыка
-// — Показывает потенциальный XP до нажатия
 // — Анимация и haptic feedback при чекине
 // — Заметка (необязательно)
 // — Статус: сколько отмечено из всех
@@ -202,36 +201,15 @@ const CheckinPage = (() => {
             ${skill.categoryIcon} ${Card.escapeHtml(skill.name)}
           </div>
           <div class="skill-meta">
-            Ранг ${skill.rank} · ${App.formatNumber(skill.totalXP)} XP
+            Ранг ${skill.rank}${skill.days ? ` · ${skill.days} ${Card.pluralDays(skill.days)}` : ''}
             ${skill.streak > 0
               ? ` · 🔥 ${skill.streak} ${Card.pluralDays(skill.streak)}`
               : ''
             }
           </div>
 
-          <!-- Потенциальный XP (если ещё не отмечен) -->
-          ${!isChecked && skill.potentialXP > 0
-            ? `<div class="checkin-potential">
-                 +${skill.potentialXP} XP за практику
-               </div>`
-            : ''
-          }
         </div>
 
-        <!-- Множитель стрика -->
-        ${skill.multiplier > 1
-          ? `<div class="streak-multiplier" style="
-               font-size: 12px;
-               color: var(--streak-fire);
-               font-weight: 700;
-               background: rgba(255, 107, 53, 0.1);
-               padding: 4px 8px;
-               border-radius: 8px;
-             ">
-               x${skill.multiplier}
-             </div>`
-          : ''
-        }
       </div>
     `;
   }
@@ -293,35 +271,12 @@ const CheckinPage = (() => {
         itemEl.classList.remove('unchecked');
         itemEl.classList.add('checked');
 
-        // Анимация появления XP
-        const xpPopup = document.createElement('div');
-        xpPopup.textContent = `+${result.streak.earnedXP} XP`;
-        xpPopup.style.cssText = `
-          position: absolute;
-          right: 16px;
-          top: 50%;
-          transform: translateY(-50%);
-          color: var(--rank-d);
-          font-weight: 700;
-          font-size: 16px;
-          animation: xp-fly 1s ease-out forwards;
-          pointer-events: none;
-        `;
-        itemEl.style.position = 'relative';
-        itemEl.appendChild(xpPopup);
-
-        // Убираем popup через секунду
-        setTimeout(() => xpPopup.remove(), 1000);
-
         // Обновляем мета-информацию
         const metaEl = itemEl.querySelector('.skill-meta');
         if (metaEl) {
-          metaEl.textContent = `Ранг ${result.skill.rank} · ${App.formatNumber(result.skill.totalXP)} XP · 🔥 ${result.streak.current} ${Card.pluralDays(result.streak.current)}`;
+          metaEl.textContent = `Ранг ${result.skill.rank}${result.skill.days ? ` · ${result.skill.days} ${Card.pluralDays(result.skill.days)}` : ''} · 🔥 ${result.streak.current} ${Card.pluralDays(result.streak.current)}`;
         }
 
-        // Убираем потенциальный XP
-        const potentialEl = itemEl.querySelector('.checkin-potential');
-        if (potentialEl) potentialEl.remove();
       }
 
       // Toast
@@ -376,27 +331,6 @@ const CheckinPage = (() => {
     }
   }
 
-
-  // ==========================================
-  // Добавляем CSS-анимацию для XP
-  // ==========================================
-
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes xp-fly {
-      0% {
-        opacity: 1;
-        transform: translateY(-50%) scale(1);
-      }
-      100% {
-        opacity: 0;
-        transform: translateY(-100%) scale(1.5);
-      }
-    }
-  `;
-  document.head.appendChild(style);
-
-
   // ==========================================
   // Публичный интерфейс
   // ==========================================
@@ -431,7 +365,7 @@ const HomePage = (() => {
         API.getTodayStatus()
       ]);
 
-      App.state.user = profileData.user;
+      App.state.user = { ...profileData.user, isOwn: true };
 
       const unchecked = todayData.skills.filter(s => !s.checkedIn);
 
@@ -462,7 +396,6 @@ const HomePage = (() => {
                   <div class="streak-card">
                     <div class="streak-card-fire">🔥${s.streak}</div>
                     <div class="streak-card-name">${Card.escapeHtml(s.name)}</div>
-                    <div class="streak-card-mult">x${s.multiplier}</div>
                   </div>
                 `).join('')}
               </div>
@@ -594,7 +527,7 @@ const HomePage = (() => {
               <div class="skill-info" style="flex:1;">
                 <div class="skill-name">${s.categoryIcon} ${Card.escapeHtml(s.name)}</div>
                 <div class="skill-meta">
-                  ${s.streak > 0 ? `🔥${s.streak} · ` : ''}+${s.potentialXP} XP
+                  ${s.streak > 0 ? `🔥${s.streak}` : ''}
                 </div>
               </div>
             </div>

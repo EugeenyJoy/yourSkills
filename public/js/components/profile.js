@@ -304,7 +304,7 @@ const AccountPage = (() => {
       });
       API.clearCache();
       await App.refreshProfile();
-      App.state.user = { ...(App.state.user || {}), ...result.user };
+      App.state.user = { ...(App.state.user || {}), ...result.user, isOwn: true };
       const savedAll = result.user?.badgesAll || result.user?.badges;
       if (savedAll) {
         settingsBadgesDraft = cloneBadgesForDraft(savedAll);
@@ -359,7 +359,7 @@ const AccountPage = (() => {
 
   async function confirmResetProfile() {
     const ok = window.confirm(
-      'Сбросить прогресс профиля?\n\nБудут удалены навыки, чекины, достижения, подписки и XP в приложении. Telegram-аккаунт не затронется.'
+      'Сбросить прогресс профиля?\n\nБудут удалены навыки, чекины, достижения и подписки в приложении. Telegram-аккаунт не затронется.'
     );
     if (!ok) return;
 
@@ -543,7 +543,7 @@ const UserProfilePage = {
 // SkillDetailPage — Детальная страница навыка
 // ============================================
 // Показывает:
-// — Подробности навыка (XP по источникам)
+// — Подробности навыка (ранг, стрики, календарь)
 // — Календарь стриков
 // — Список подтвердивших
 // — Кнопка подтверждения (для чужого)
@@ -582,8 +582,8 @@ const SkillDetailPage = (() => {
               </div>
               <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px;">
                 ${Card.escapeHtml(details.category)}
-                ${details.experienceYears > 0
-                  ? ` · ${details.experienceYears} ${Card.pluralYears(details.experienceYears)} опыта`
+                ${details.activeYears > 0
+                  ? ` · ${details.activeYears} ${Card.pluralYears(details.activeYears)} опыта`
                   : ''
                 }
               </div>
@@ -596,16 +596,11 @@ const SkillDetailPage = (() => {
                 ${details.rank}
               </div>
 
-              <!-- XP прогресс -->
-              ${Card.renderXPBar(details.rankInfo)}
             </div>
           </div>
 
           <!-- Стрик -->
           ${renderStreakSection(details, history)}
-
-          <!-- Разбивка XP -->
-          ${renderXPBreakdown(details.xpBreakdown)}
 
           <!-- Календарь -->
           ${history ? renderCalendar(history) : ''}
@@ -683,74 +678,6 @@ const SkillDetailPage = (() => {
 
 
   /**
-   * Разбивка XP по источникам
-   */
-  function renderXPBreakdown(xp) {
-    if (!xp) return '';
-
-    const sources = [
-      { label: 'Стаж',           value: xp.experience,    icon: '⏳' },
-      { label: 'Подтверждения',  value: xp.endorsements,  icon: '🤝', count: xp.endorsementCount },
-      { label: 'Достижения',     value: xp.achievements,  icon: '🏆' },
-      { label: 'Стрик-бонус',    value: xp.bonus,         icon: '🔥' },
-    ];
-
-    return `
-      <div class="section">
-        <div class="section-header">
-          <span class="section-title">📊 Источники XP</span>
-          <span style="font-size: 14px; color: var(--text-secondary);">
-            Всего: ${App.formatNumber(xp.total)}
-          </span>
-        </div>
-        <div style="display: flex; flex-direction: column; gap: 8px;">
-          ${sources.map(s => `
-            <div style="
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-              padding: 12px;
-              background: var(--bg-card);
-              border-radius: var(--radius-md);
-            ">
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 20px;">${s.icon}</span>
-                <span>${s.label}${s.count ? ` (${s.count})` : ''}</span>
-              </div>
-              <span style="font-weight: 700;">
-                ${App.formatNumber(s.value)} XP
-              </span>
-            </div>
-          `).join('')}
-
-          <!-- Визуальная разбивка: фундамент vs бонус -->
-          <div style="
-            padding: 12px;
-            background: var(--bg-card);
-            border-radius: var(--radius-md);
-          ">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-              <span style="font-size: 13px;">🪨 Фундамент: ${App.formatNumber(xp.foundation)}</span>
-              <span style="font-size: 13px;">🔥 Бонус: ${App.formatNumber(xp.bonus)}</span>
-            </div>
-            <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden;">
-              <div style="
-                flex: ${xp.foundation};
-                background: var(--accent);
-              "></div>
-              <div style="
-                flex: ${xp.bonus || 1};
-                background: var(--streak-fire);
-              "></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-
-  /**
    * Календарь стриков (90 дней)
    */
   function renderCalendar(history) {
@@ -781,6 +708,13 @@ const SkillDetailPage = (() => {
    * Секция подтверждений
    */
   function renderEndorsementsSection(data, skillId) {
+    const rankLabel = (endorser) => {
+      if (endorser.rankLabel) return endorser.rankLabel;
+      const rawRank = endorser.skillRank || endorser.overallRank || endorser.rank || null;
+      if (!rawRank) return 'Ранг F';
+      return `Ранг ${rawRank}`;
+    };
+
     return `
       <div class="section">
         <div class="section-header">
@@ -800,7 +734,7 @@ const SkillDetailPage = (() => {
                 <div class="skill-info">
                   <div class="user-name">${Card.escapeHtml(e.firstName)}</div>
                   <div style="font-size: 12px; color: var(--text-secondary);">
-                    Ранг ${e.rank} · +${e.xpGiven} XP
+                    ${rankLabel(e)}
                   </div>
                 </div>
               </div>
@@ -1109,7 +1043,7 @@ const SkillDetailPage = (() => {
       }
 
       await App.refreshProfile();
-      Router.navigate('/');
+      Router.refresh();
 
     } catch (error) {
       App.showToast(error.message || 'Ошибка', '❌');
@@ -1128,7 +1062,7 @@ const SkillDetailPage = (() => {
           Удалить навык <strong>${Card.escapeHtml(skillName)}</strong>?
         </div>
         <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 20px;">
-          Все чекины, подтверждения и XP будут удалены.
+          Все чекины и подтверждения будут удалены.
           Это действие нельзя отменить.
         </div>
         <div style="display: flex; gap: 8px;">
@@ -1157,7 +1091,7 @@ const SkillDetailPage = (() => {
       App.showToast('Навык удалён', '🗑');
 
       await App.refreshProfile();
-      Router.navigate('/');
+      Router.refresh();
 
     } catch (error) {
       App.showToast(error.message || 'Ошибка', '❌');

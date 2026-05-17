@@ -1,5 +1,5 @@
 // ============================================
-// routes/profile.js — Профили и подписки v3
+// routes/profile.js — Профили и подписки v4
 // ============================================
 
 const express = require('express');
@@ -7,9 +7,73 @@ const router = express.Router();
 const db = require('../database');
 const authMiddleware = require('../middleware/auth');
 const badgeLib = require('../lib/badges');
+const { RANK_ORDER, getTitleByRank } = require('../lib/ranks');
 
 
 router.use(authMiddleware);
+
+
+// ============================================
+// Хелперы рангов
+// ============================================
+
+function baseOf(rank) {
+  return String(rank || 'F').replace('+', '');
+}
+function rankIndex(rank) {
+  return RANK_ORDER.indexOf(baseOf(rank));
+}
+
+function normalizeUserId(id) {
+  const num = Number(id);
+  return Number.isFinite(num) ? num : String(id);
+}
+
+function isSameUserId(a, b) {
+  return normalizeUserId(a) === normalizeUserId(b);
+}
+
+// SQL-выражение для числового индекса ранга (для сортировки в БД)
+// F=0, E=1, D=2, C=3, B=4, A=5, S=6 — '+' игнорируем через REPLACE
+const RANK_NUM_SQL = `
+  CASE REPLACE(COALESCE(overall_rank,'F'),'+','')
+    WHEN 'F' THEN 0 WHEN 'E' THEN 1 WHEN 'D' THEN 2 WHEN 'C' THEN 3
+    WHEN 'B' THEN 4 WHEN 'A' THEN 5 WHEN 'S' THEN 6 ELSE 0
+  END
+`;
+// Для алиаса us.overall_rank (в JOIN-ах юзаем us.rank)
+const SKILL_RANK_NUM_SQL = `
+  CASE REPLACE(COALESCE(us.rank,'F'),'+','')
+    WHEN 'F' THEN 0 WHEN 'E' THEN 1 WHEN 'D' THEN 2 WHEN 'C' THEN 3
+    WHEN 'B' THEN 4 WHEN 'A' THEN 5 WHEN 'S' THEN 6 ELSE 0
+  END
+`;
+// Для u.overall_rank в JOIN-ах
+const U_RANK_NUM_SQL = `
+  CASE REPLACE(COALESCE(u.overall_rank,'F'),'+','')
+    WHEN 'F' THEN 0 WHEN 'E' THEN 1 WHEN 'D' THEN 2 WHEN 'C' THEN 3
+    WHEN 'B' THEN 4 WHEN 'A' THEN 5 WHEN 'S' THEN 6 ELSE 0
+  END
+`;
+
+function formatSkillRow(s) {
+  const rank = s.rank || 'F';
+  const base = baseOf(rank);
+  return {
+    id: s.skill_id,
+    name: s.name,
+    rank,
+    baseRank: base,
+    plus: rank.endsWith('+'),
+    title: getTitleByRank(base),
+    days: s.days || 0,
+    activeYears: s.active_years || 0,
+    streak: s.current_streak || 0,
+    bestStreak: s.best_streak || 0,
+    categoryIcon: s.category_icon,
+    subcategoryIcon: s.subcategory_icon,
+  };
+}
 
 
 // ============================================
@@ -17,25 +81,32 @@ router.use(authMiddleware);
 // ============================================
 
 function buildProfile(userId, viewerId) {
-  const skillsRouter = require('./skills');
-
+  const ownProfile = isSameUserId(userId, viewerId);
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   if (!user) return null;
 
-  // Навыки
+  // Навыки + уник. дни чекинов
   const skills = db.prepare(`
     SELECT us.*, s.name, s.slug, s.description,
            sc.name as subcategory_name, sc.icon as subcategory_icon,
-           c.name as category_name, c.icon as category_icon, c.id as category_id
+           c.name as category_name, c.icon as category_icon, c.id as category_id,
+           (SELECT COUNT(DISTINCT date) FROM checkins
+              WHERE user_id = us.user_id AND skill_id = us.skill_id) as days
     FROM user_skills us
     JOIN skills s ON us.skill_id = s.id
     JOIN subcategories sc ON s.subcategory_id = sc.id
     JOIN categories c ON sc.category_id = c.id
     WHERE us.user_id = ?
-    ORDER BY (us.foundation_xp + us.bonus_xp) DESC
   `).all(userId);
 
-  // Группируем по категориям
+  // Сортировка по рангу (DESC), потом по дням
+  skills.sort((a, b) => {
+    const d = rankIndex(b.rank) - rankIndex(a.rank);
+    if (d !== 0) return d;
+    return (b.days || 0) - (a.days || 0);
+  });
+
+  // Группировка по категориям
   const catMap = new Map();
   for (const s of skills) {
     if (!catMap.has(s.category_id)) {
@@ -46,19 +117,7 @@ function buildProfile(userId, viewerId) {
         skills: []
       });
     }
-    catMap.get(s.category_id).skills.push({
-      id: s.skill_id,
-      name: s.name,
-      rank: s.rank || 'F',
-      totalXP: (s.foundation_xp || 0) + (s.bonus_xp || 0),
-      foundationXP: s.foundation_xp || 0,
-      bonusXP: s.bonus_xp || 0,
-      totalYears: s.total_years || 0,
-      activeYears: s.active_years || 0,
-      streak: s.current_streak || 0,
-      categoryIcon: s.category_icon,
-      subcategoryIcon: s.subcategory_icon,
-    });
+    catMap.get(s.category_id).skills.push(formatSkillRow(s));
   }
 
   // Достижения
@@ -70,7 +129,7 @@ function buildProfile(userId, viewerId) {
     ORDER BY ua.earned_at DESC
   `).all(userId);
 
-  // Социальное
+  // Социалка
   const followers = db.prepare(
     'SELECT COUNT(*) as c FROM follows WHERE following_id = ?'
   ).get(userId).c;
@@ -79,14 +138,13 @@ function buildProfile(userId, viewerId) {
     'SELECT COUNT(*) as c FROM follows WHERE follower_id = ?'
   ).get(userId).c;
 
-  const isFollowing = viewerId !== userId
+  const isFollowing = !ownProfile
     ? !!db.prepare(
         'SELECT id FROM follows WHERE follower_id = ? AND following_id = ?'
       ).get(viewerId, userId)
     : false;
 
-  // Подписан ли ОН на меня (для определения взаимной подписки)
-  const followsMe = viewerId !== userId
+  const followsMe = !ownProfile
     ? !!db.prepare(
         'SELECT id FROM follows WHERE follower_id = ? AND following_id = ?'
       ).get(userId, viewerId)
@@ -103,8 +161,8 @@ function buildProfile(userId, viewerId) {
     'SELECT COUNT(*) as c FROM endorsements WHERE to_user_id = ?'
   ).get(userId).c;
 
-  // Бейджи (таблица user_badges)
-  const normalizedBadges = badgeLib.getUserBadgesForApi(userId);
+  // Бейджи
+  const publicBadges = badgeLib.getUserBadgesForApi(userId);
   const badgeKeys = [...new Set(badgeLib.getVisibleUserBadgeKeys(userId))];
 
   const mapBadgeToClient = (b) => ({
@@ -112,13 +170,17 @@ function buildProfile(userId, viewerId) {
     name: b.name || '',
     icon: b.icon || '🏷️',
     color: b.color || '#888',
-    visible: b.visible !== false
+    ...(b.description ? { description: b.description } : {}),
+    ...(b.earned_at ? { earned_at: b.earned_at } : {}),
+    ...(Object.prototype.hasOwnProperty.call(b, 'visible')
+      ? { visible: b.visible !== false }
+      : {})
   });
 
-  // На карточке профиля — только видимые бейджи (как у других пользователей)
-  const badgeDetails = normalizedBadges
-    .filter(b => b.visible !== false)
-    .map(mapBadgeToClient);
+  const badgeDetails = publicBadges.map(mapBadgeToClient);
+
+  const overallRank = user.overall_rank || 'F';
+  const overallBase = baseOf(overallRank);
 
   const userPayload = {
     id: user.id,
@@ -128,18 +190,19 @@ function buildProfile(userId, viewerId) {
     profileText: user.profile_text || '',
     showProfileText: !!user.show_profile_text,
     photoUrl: user.photo_url,
-    overallRank: user.overall_rank || 'F',
-    overallXP: user.overall_xp || 0,
-    overallRankInfo: skillsRouter.getRankInfo(user.overall_xp || 0),
+    overallRank,
+    overallBaseRank: overallBase,
+    overallPlus: overallRank.endsWith('+'),
+    overallTitle: getTitleByRank(overallBase),
     badges: badgeDetails,
     badgeKeys,
-    isOwn: userId === viewerId,
+    isOwn: ownProfile,
     createdAt: user.created_at,
   };
 
-  // Полный список с видимостью — только для владельца (экран настроек)
-  if (userId === viewerId) {
-    userPayload.badgesAll = normalizedBadges.map(mapBadgeToClient);
+  if (ownProfile) {
+    const ownerBadges = badgeLib.getUserBadgesForApi(userId, { includeVisibility: true });
+    userPayload.badgesAll = ownerBadges.map(mapBadgeToClient);
   }
 
   return {
@@ -174,9 +237,9 @@ router.get('/me', (req, res) => {
   }
 });
 
+
 // ============================================
 // PUT /api/profile/me
-// Редактирование только своего профиля
 // ============================================
 router.put('/me', (req, res) => {
   try {
@@ -185,19 +248,14 @@ router.put('/me', (req, res) => {
     const profileText = String(req.body.profileText || '').trim();
     const showProfileText = req.body.showProfileText ? 1 : 0;
 
-    if (!firstName) {
-      return res.status(400).json({ error: 'Имя не может быть пустым' });
-    }
-
+    if (!firstName) return res.status(400).json({ error: 'Имя не может быть пустым' });
     if (firstName.length > 64 || lastName.length > 64) {
       return res.status(400).json({ error: 'Слишком длинное имя' });
     }
-
     if (profileText.length > 48) {
       return res.status(400).json({ error: 'Слишком длинный текст профиля' });
     }
 
-    // Видимость бейджей (только существующие строки в user_badges)
     if (req.body.badges && Array.isArray(req.body.badges)) {
       for (const b of req.body.badges) {
         const code = String(b?.code || '').trim();
@@ -207,30 +265,24 @@ router.put('/me', (req, res) => {
       }
     }
 
-    const query = `
+    db.prepare(`
       UPDATE users
       SET first_name = ?, last_name = ?, profile_text = ?, show_profile_text = ?,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `;
-    const params = [firstName, lastName, profileText, showProfileText, req.userId];
-
-    db.prepare(query).run(...params);
+    `).run(firstName, lastName, profileText, showProfileText, req.userId);
 
     const data = buildProfile(req.userId, req.userId);
-    res.json({
-      message: 'Профиль обновлён',
-      user: data.user
-    });
+    res.json({ message: 'Профиль обновлён', user: data.user });
   } catch (error) {
     console.error('❌ Обновление профиля:', error.message);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
+
 // ============================================
 // POST /api/profile/me/reset
-// Сброс прогресса профиля (без удаления пользователя)
 // ============================================
 router.post('/me/reset', (req, res) => {
   try {
@@ -248,7 +300,6 @@ router.post('/me/reset', (req, res) => {
 
       db.prepare('DELETE FROM feed_reactions WHERE user_id = ?').run(userId);
       db.prepare('DELETE FROM feed_events WHERE user_id = ?').run(userId);
-
       db.prepare('DELETE FROM endorsements WHERE from_user_id = ? OR to_user_id = ?')
         .run(userId, userId);
       db.prepare('DELETE FROM checkins WHERE user_id = ?').run(userId);
@@ -256,14 +307,11 @@ router.post('/me/reset', (req, res) => {
       db.prepare('DELETE FROM user_skills WHERE user_id = ?').run(userId);
       db.prepare('DELETE FROM follows WHERE follower_id = ? OR following_id = ?')
         .run(userId, userId);
-
       db.prepare('DELETE FROM user_badges WHERE user_id = ?').run(userId);
 
       db.prepare(`
         UPDATE users
         SET overall_rank = 'F',
-            overall_xp = 0,
-            badges = '[]',
             profile_text = '',
             show_profile_text = 0,
             updated_at = CURRENT_TIMESTAMP
@@ -272,7 +320,6 @@ router.post('/me/reset', (req, res) => {
     });
 
     tx();
-
     res.json({ message: 'Профиль сброшен' });
   } catch (error) {
     console.error('❌ Сброс профиля:', error.message);
@@ -280,9 +327,9 @@ router.post('/me/reset', (req, res) => {
   }
 });
 
+
 // ============================================
 // DELETE /api/profile/me
-// Полное удаление профиля из приложения
 // ============================================
 router.delete('/me', (req, res) => {
   try {
@@ -307,11 +354,11 @@ router.delete('/me', (req, res) => {
       db.prepare('DELETE FROM user_skills WHERE user_id = ?').run(userId);
       db.prepare('DELETE FROM follows WHERE follower_id = ? OR following_id = ?')
         .run(userId, userId);
+      db.prepare('DELETE FROM user_badges WHERE user_id = ?').run(userId);
       db.prepare('DELETE FROM users WHERE id = ?').run(userId);
     });
 
     tx();
-
     res.json({ message: 'Профиль удалён' });
   } catch (error) {
     console.error('❌ Удаление профиля:', error.message);
@@ -321,7 +368,7 @@ router.delete('/me', (req, res) => {
 
 
 // ============================================
-// GET /api/profile/:userId
+// GET /api/profile/search/users
 // ============================================
 
 router.get('/search/users', (req, res) => {
@@ -335,29 +382,32 @@ router.get('/search/users', (req, res) => {
     let query, params;
 
     if (skill) {
-      // Поиск по навыку
+      // Поиск по навыку — сортируем по рангу скилла (числовой индекс)
       query = `
         SELECT DISTINCT u.id, u.first_name, u.last_name, u.username,
-               u.photo_url, u.overall_rank, u.overall_xp,
+               u.photo_url, u.overall_rank,
                us.rank as skill_rank,
-               (us.foundation_xp + us.bonus_xp) as skill_xp
+               ${SKILL_RANK_NUM_SQL} as skill_rank_num
         FROM users u
         JOIN user_skills us ON u.id = us.user_id
         JOIN skills s ON us.skill_id = s.id
         WHERE s.slug = ?
-        ${rank ? 'AND us.rank = ?' : ''}
-        ORDER BY skill_xp DESC
+        ${rank ? 'AND REPLACE(us.rank,\'+\',\'\') = ?' : ''}
+        ORDER BY skill_rank_num DESC
         LIMIT ? OFFSET ?
       `;
-      params = rank ? [skill, rank, limit + 1, page * limit] : [skill, limit + 1, page * limit];
+      params = rank
+        ? [skill, baseOf(rank), limit + 1, page * limit]
+        : [skill, limit + 1, page * limit];
     } else if (q.length >= 2) {
-      // Поиск по имени
+      // Поиск по имени — сортируем по общему рангу
       query = `
         SELECT id, first_name, last_name, username,
-               photo_url, overall_rank, overall_xp
+               photo_url, overall_rank,
+               ${RANK_NUM_SQL} as rank_num
         FROM users
         WHERE first_name LIKE ? OR last_name LIKE ? OR username LIKE ?
-        ORDER BY overall_xp DESC
+        ORDER BY rank_num DESC
         LIMIT ? OFFSET ?
       `;
       const like = `%${q.slice(0, 50)}%`;
@@ -370,17 +420,23 @@ router.get('/search/users', (req, res) => {
     const hasMore = rows.length > limit;
     const sliced = rows.slice(0, limit);
     const badgeMap = badgeLib.getVisibleBadgeKeysMap(sliced.map(r => r.id));
-    const users = sliced.map(u => ({
-      id: u.id,
-      firstName: u.first_name,
-      lastName: u.last_name,
-      username: u.username,
-      photoUrl: u.photo_url,
-      rank: u.overall_rank || 'F',
-      xp: u.overall_xp || 0,
-      skillRank: u.skill_rank || null,
-      badgeKeys: badgeMap.get(u.id) || [],
-    }));
+
+    const users = sliced.map(u => {
+      const r = u.overall_rank || 'F';
+      return {
+        id: u.id,
+        firstName: u.first_name,
+        lastName: u.last_name,
+        username: u.username,
+        photoUrl: u.photo_url,
+        rank: r,
+        baseRank: baseOf(r),
+        plus: r.endsWith('+'),
+        title: getTitleByRank(baseOf(r)),
+        skillRank: u.skill_rank || null,
+        badgeKeys: badgeMap.get(u.id) || [],
+      };
+    });
 
     res.json({ users, hasMore, page });
 
@@ -391,33 +447,45 @@ router.get('/search/users', (req, res) => {
 });
 
 
+// ============================================
+// GET /api/profile/top/users  (лидерборд)
+// ============================================
+
 router.get('/top/users', (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 20, 100);
 
+    // Топ: только те, у кого есть хотя бы один чекин (есть прогресс)
     const rows = db.prepare(`
       SELECT id, first_name, last_name, username,
-             photo_url, overall_rank, overall_xp
+             photo_url, overall_rank,
+             ${RANK_NUM_SQL} as rank_num,
+             (SELECT COUNT(*) FROM checkins WHERE user_id = users.id) as total_checkins
       FROM users
-      WHERE overall_xp > 0
-      ORDER BY overall_xp DESC
+      WHERE EXISTS (SELECT 1 FROM checkins WHERE user_id = users.id)
+      ORDER BY rank_num DESC, total_checkins DESC
       LIMIT ?
     `).all(limit);
 
     const badgeMap = badgeLib.getVisibleBadgeKeysMap(rows.map(r => r.id));
 
     res.json({
-      users: rows.map((u, i) => ({
-        id: u.id,
-        firstName: u.first_name,
-        lastName: u.last_name,
-        username: u.username,
-        photoUrl: u.photo_url,
-        rank: u.overall_rank || 'F',
-        xp: u.overall_xp || 0,
-        position: i + 1,
-        badgeKeys: badgeMap.get(u.id) || [],
-      }))
+      users: rows.map((u, i) => {
+        const r = u.overall_rank || 'F';
+        return {
+          id: u.id,
+          firstName: u.first_name,
+          lastName: u.last_name,
+          username: u.username,
+          photoUrl: u.photo_url,
+          rank: r,
+          baseRank: baseOf(r),
+          plus: r.endsWith('+'),
+          title: getTitleByRank(baseOf(r)),
+          position: i + 1,
+          badgeKeys: badgeMap.get(u.id) || [],
+        };
+      })
     });
 
   } catch (error) {
@@ -426,6 +494,10 @@ router.get('/top/users', (req, res) => {
   }
 });
 
+
+// ============================================
+// GET /api/profile/:userId
+// ============================================
 
 router.get('/:userId', (req, res) => {
   try {
@@ -463,17 +535,16 @@ router.post('/:userId/follow', (req, res) => {
       'INSERT OR IGNORE INTO follows (follower_id, following_id) VALUES (?, ?)'
     ).run(followerId, followingId);
 
-    // Достижения
     const skillsRouter = require('./skills');
     const followerCount = db.prepare(
       'SELECT COUNT(*) as c FROM follows WHERE following_id = ?'
     ).get(followingId).c;
 
-    if (followerCount >= 1)   skillsRouter.grantAchievement(followingId, 'first_follower');
-    if (followerCount >= 10)  skillsRouter.grantAchievement(followingId, 'ten_followers');
-    if (followerCount >= 25)  skillsRouter.grantAchievement(followingId, 'twenty_five_follow');
-    if (followerCount >= 50)  skillsRouter.grantAchievement(followingId, 'fifty_followers');
-    if (followerCount >= 100) skillsRouter.grantAchievement(followingId, 'hundred_followers');
+    if (followerCount >= 1)   skillsRouter.grantAchievement?.(followingId, 'first_follower');
+    if (followerCount >= 10)  skillsRouter.grantAchievement?.(followingId, 'ten_followers');
+    if (followerCount >= 25)  skillsRouter.grantAchievement?.(followingId, 'twenty_five_follow');
+    if (followerCount >= 50)  skillsRouter.grantAchievement?.(followingId, 'fifty_followers');
+    if (followerCount >= 100) skillsRouter.grantAchievement?.(followingId, 'hundred_followers');
 
     res.json({ message: 'Подписка оформлена' });
 
@@ -494,7 +565,6 @@ router.delete('/:userId/follow', (req, res) => {
     ).run(followerId, followingId);
 
     res.json({ message: 'Подписка отменена' });
-
   } catch (error) {
     console.error('❌ Отписка:', error.message);
     res.status(500).json({ error: 'Ошибка сервера' });
@@ -510,7 +580,7 @@ router.get('/:userId/followers', (req, res) => {
 
     const users = db.prepare(`
       SELECT u.id, u.first_name, u.last_name, u.username,
-             u.photo_url, u.overall_rank, u.overall_xp
+             u.photo_url, u.overall_rank
       FROM follows f
       JOIN users u ON f.follower_id = u.id
       WHERE f.following_id = ?
@@ -525,12 +595,21 @@ router.get('/:userId/followers', (req, res) => {
     ).get(userId).c;
 
     res.json({
-      users: users.map(u => ({
-        id: u.id, firstName: u.first_name, lastName: u.last_name,
-        username: u.username, photoUrl: u.photo_url,
-        rank: u.overall_rank || 'F', xp: u.overall_xp || 0,
-        badgeKeys: badgeMap.get(u.id) || [],
-      })),
+      users: users.map(u => {
+        const r = u.overall_rank || 'F';
+        return {
+          id: u.id,
+          firstName: u.first_name,
+          lastName: u.last_name,
+          username: u.username,
+          photoUrl: u.photo_url,
+          rank: r,
+          baseRank: baseOf(r),
+          plus: r.endsWith('+'),
+          title: getTitleByRank(baseOf(r)),
+          badgeKeys: badgeMap.get(u.id) || [],
+        };
+      }),
       total
     });
 
@@ -549,7 +628,7 @@ router.get('/:userId/following', (req, res) => {
 
     const users = db.prepare(`
       SELECT u.id, u.first_name, u.last_name, u.username,
-             u.photo_url, u.overall_rank, u.overall_xp
+             u.photo_url, u.overall_rank
       FROM follows f
       JOIN users u ON f.following_id = u.id
       WHERE f.follower_id = ?
@@ -564,12 +643,21 @@ router.get('/:userId/following', (req, res) => {
     ).get(userId).c;
 
     res.json({
-      users: users.map(u => ({
-        id: u.id, firstName: u.first_name, lastName: u.last_name,
-        username: u.username, photoUrl: u.photo_url,
-        rank: u.overall_rank || 'F', xp: u.overall_xp || 0,
-        badgeKeys: badgeMap.get(u.id) || [],
-      })),
+      users: users.map(u => {
+        const r = u.overall_rank || 'F';
+        return {
+          id: u.id,
+          firstName: u.first_name,
+          lastName: u.last_name,
+          username: u.username,
+          photoUrl: u.photo_url,
+          rank: r,
+          baseRank: baseOf(r),
+          plus: r.endsWith('+'),
+          title: getTitleByRank(baseOf(r)),
+          badgeKeys: badgeMap.get(u.id) || [],
+        };
+      }),
       total
     });
 

@@ -73,10 +73,9 @@ const Router = (() => {
    * @param {boolean} pushState — добавлять в историю (true)
    *                               или заменять (false)
    */
-  async function navigate(path, pushState = true) {
-    // Не навигировать на текущую страницу
-    // (если не принудительное обновление)
-    if (path === currentPath && pushState) return;
+  async function navigate(path, pushState = true, force = false) {
+    // Не навигировать на текущую страницу (если не принудительное обновление)
+    if (path === currentPath && pushState && !force) return;
 
     currentPath = path;
 
@@ -258,6 +257,7 @@ const Router = (() => {
   const tg = window.Telegram?.WebApp;
 
   return {
+    refresh: () => navigate(currentPath, false, true),
     addRoute,
     navigate,
     init,

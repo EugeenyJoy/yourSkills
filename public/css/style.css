@@ -479,10 +479,10 @@ body {
 
 
 /* ============================================
-   ПРОГРЕСС-БАР XP
+   ПРОГРЕСС-БАР РАНГА
    ============================================ */
 
-.xp-bar {
+.rank-bar {
   height: 6px;
   background: rgba(255, 255, 255, 0.08);
   border-radius: 3px;
@@ -490,23 +490,23 @@ body {
   margin: 8px 0;
 }
 
-.xp-bar-fill {
+.rank-bar-fill {
   height: 100%;
   border-radius: 3px;
   transition: width var(--transition-slow);
   background: var(--accent);
 }
 
-.xp-bar-fill.rank-e { background: var(--rank-e); }
-.xp-bar-fill.rank-d { background: var(--rank-d); }
-.xp-bar-fill.rank-c { background: var(--rank-c); }
-.xp-bar-fill.rank-b { background: var(--rank-b); }
-.xp-bar-fill.rank-a { background: var(--rank-a); }
-.xp-bar-fill.rank-s {
+.rank-bar-fill.rank-e { background: var(--rank-e); }
+.rank-bar-fill.rank-d { background: var(--rank-d); }
+.rank-bar-fill.rank-c { background: var(--rank-c); }
+.rank-bar-fill.rank-b { background: var(--rank-b); }
+.rank-bar-fill.rank-a { background: var(--rank-a); }
+.rank-bar-fill.rank-s {
   background: linear-gradient(90deg, var(--rank-s), var(--rank-s-gold));
 }
 
-.xp-label {
+.rank-label {
   display: flex;
   justify-content: space-between;
   font-size: 11px;
@@ -1098,6 +1098,25 @@ body {
   margin-bottom: 20px;
 }
 
+
+/* ============================================
+   АДАПТИВНОСТЬ
+   ============================================ */
+
+/* На очень маленьких экранах */
+@media (max-width: 350px) {
+  .card-stats { flex-wrap: wrap; gap: 8px; }
+  .achievement-grid { grid-template-columns: repeat(3, 1fr); }
+  .category-grid { grid-template-columns: 1fr; }
+}
+
+/* На планшетах и десктопе */
+@media (min-width: 500px) {
+  .app {
+    border-left: 1px solid rgba(255, 255, 255, 0.05);
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+  }
+}
 
 /* ============================================
    АДАПТИВНОСТЬ

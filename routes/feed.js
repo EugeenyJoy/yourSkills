@@ -54,55 +54,63 @@ function formatEvent(row) {
     userReaction: null
   };
 
-  switch (row.event_type) {
-    case 'rank_up':
-      base.icon = '⬆️';
-      base.title = `Повышение до ${data.newRank}!`;
-      base.text = `${data.skill || '???'}: ${data.oldRank} → ${data.newRank}`;
-      base.accent = data.newRank === 'S' ? 'gold'
-        : data.newRank === 'A' ? 'orange'
-        : data.newRank === 'B' ? 'purple'
-        : 'blue';
-      break;
+    switch (row.event_type) {
+      case 'rank_up': {
+        const newRank = data.newRank || '?';
+        const oldRank = data.oldRank || '?';
+        const baseNew = String(newRank).replace('+', ''); // для подбора цвета по A+/B+
+        base.icon = '⬆️';
+        base.title = data.title
+          ? `${data.title} (ранг ${newRank})`
+          : `Повышение до ${newRank}!`;
+        base.text = `${data.skill || '???'}: ${oldRank} → ${newRank}`;
+        base.accent =
+          baseNew === 'S' ? 'gold' :
+          baseNew === 'A' ? 'orange' :
+          baseNew === 'B' ? 'purple' :
+          'blue';
+        break;
+      }
 
-    case 'achievement':
-      base.icon = data.icon || '🏆';
-      base.title = data.name || 'Достижение';
-      base.text = `+${data.xp || 0} XP`;
-      base.accent = data.rarity === 'legendary' ? 'gold'
-        : data.rarity === 'epic' ? 'orange'
-        : data.rarity === 'rare' ? 'blue'
-        : 'green';
-      break;
+      case 'achievement':
+        base.icon = data.icon || '🏆';
+        base.title = data.name || 'Достижение';
+        base.text = data.description || '';
+        base.accent =
+          data.rarity === 'legendary' ? 'gold' :
+          data.rarity === 'epic'      ? 'orange' :
+          data.rarity === 'rare'      ? 'blue' :
+          'green';
+        break;
 
-    case 'streak_milestone':
-      base.icon = '🔥';
-      base.title = `Стрик ${data.streak || 0} дней!`;
-      base.text = data.skill || '';
-      base.accent = 'orange';
-      break;
+      case 'streak_milestone':
+        base.icon = '🔥';
+        base.title = `Стрик ${data.streak || 0} дней!`;
+        base.text = data.skill || '';
+        base.accent = 'orange';
+        break;
 
-    case 'new_skill':
-      base.icon = data.categoryIcon || '🌱';
-      base.title = `Новый навык: ${data.skill || '???'}`;
-      base.text = data.activeYears > 0
-        ? `${data.activeYears} лет реального опыта`
-        : 'Начало пути';
-      base.accent = 'green';
-      break;
+      case 'new_skill':
+        base.icon = data.categoryIcon || '🌱';
+        base.title = `Новый навык: ${data.skill || '???'}`;
+        base.text = data.activeYears > 0
+          ? `${data.activeYears} лет реального опыта`
+          : 'Начало пути';
+        base.accent = 'green';
+        break;
 
-    case 'endorsement':
-      base.icon = '🤝';
-      base.title = `${data.fromUser || 'Кто-то'} подтвердил навык`;
-      base.text = `${data.skill || '???'} (+${data.xpGiven || 0} XP)`;
-      base.accent = 'blue';
-      break;
+      case 'endorsement':
+        base.icon = '🤝';
+        base.title = `${data.fromUser || 'Кто-то'} подтвердил навык`;
+        base.text = data.skill || '???';
+        base.accent = 'blue';
+        break;
 
-    default:
-      base.icon = '📌';
-      base.title = row.event_type;
-      base.text = '';
-      base.accent = 'gray';
+      default:
+        base.icon = '📌';
+        base.title = row.event_type;
+        base.text = '';
+        base.accent = 'gray';
   }
 
   return base;

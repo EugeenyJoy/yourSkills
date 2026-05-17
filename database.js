@@ -1,9 +1,8 @@
 // ============================================
-// database.js — База данных v3
+// database.js — База данных v4 (ранговая)
 // ============================================
 // Ранги: F → E → D → C → B → A → S
-// Подкатегории внутри категорий
-// 200+ навыков
+// Источник истины — чекины, без XP
 // ============================================
 
 const Database = require('better-sqlite3');
@@ -31,8 +30,9 @@ db.exec(`
     photo_url TEXT DEFAULT '',
     language_code TEXT DEFAULT 'ru',
     overall_rank TEXT DEFAULT 'F',
-    overall_xp INTEGER DEFAULT 0,
-    badges TEXT DEFAULT '[]',
+    profile_text TEXT DEFAULT '',
+    show_profile_text INTEGER DEFAULT 0,
+    last_seen_at DATETIME DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -71,10 +71,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     skill_id INTEGER NOT NULL,
-    total_years REAL DEFAULT 0,
     active_years REAL DEFAULT 0,
-    foundation_xp INTEGER DEFAULT 0,
-    bonus_xp INTEGER DEFAULT 0,
     rank TEXT DEFAULT 'F',
     current_streak INTEGER DEFAULT 0,
     best_streak INTEGER DEFAULT 0,
@@ -101,7 +98,6 @@ db.exec(`
     from_user_id INTEGER NOT NULL,
     to_user_id INTEGER NOT NULL,
     skill_id INTEGER NOT NULL,
-    xp_given INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(from_user_id, to_user_id, skill_id),
     FOREIGN KEY (from_user_id) REFERENCES users(id),
@@ -115,7 +111,6 @@ db.exec(`
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     icon TEXT NOT NULL DEFAULT '🏆',
-    xp_reward INTEGER NOT NULL DEFAULT 0,
     rarity TEXT DEFAULT 'common',
     category TEXT DEFAULT 'general'
   );
@@ -150,7 +145,7 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
 
-    CREATE TABLE IF NOT EXISTS feed_reactions (
+  CREATE TABLE IF NOT EXISTS feed_reactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
@@ -179,19 +174,6 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_user_achievements_user ON user_achievements(user_id);
 `);
 
-// Миграции для новых полей профиля
-const userColumns = db.prepare('PRAGMA table_info(users)').all().map(c => c.name);
-if (!userColumns.includes('profile_text')) {
-  db.exec("ALTER TABLE users ADD COLUMN profile_text TEXT DEFAULT ''");
-}
-if (!userColumns.includes('show_profile_text')) {
-  db.exec("ALTER TABLE users ADD COLUMN show_profile_text INTEGER DEFAULT 0");
-}
-
-if (!userColumns.includes('last_seen_at')) {
-  db.exec("ALTER TABLE users ADD COLUMN last_seen_at DATETIME DEFAULT NULL");
-}
-
 // Мета-приложения (одноразовые миграции)
 db.exec(`
   CREATE TABLE IF NOT EXISTS app_meta (
@@ -217,13 +199,6 @@ db.exec(`
 // ============================================
 // СООБЩЕНИЯ (личная переписка)
 // ============================================
-// Правила:
-//   - Только при взаимной подписке
-//   - Максимум 20 сообщений в диалоге (общий лимит)
-//   - При 21-м самое старое удаляется
-//   - Антиспам: не больше 2 сообщений подряд без ответа
-//   - Прочитанность как в TG (точка у непрочитанных)
-// ============================================
 db.exec(`
   CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -245,50 +220,6 @@ db.exec(`
     ON messages(from_user_id);
 `);
 
-const BADGE_KEYS_MIGRATION = new Set([
-  'creator', 'early_adopter', 'verified', 'contributor', 'moderator'
-]);
-
-const legacyBadgesMigrated = db.prepare(
-  "SELECT 1 FROM app_meta WHERE key = 'badges_migrated_v1'"
-).get();
-
-if (!legacyBadgesMigrated) {
-  db.transaction(() => {
-    const allUsers = db.prepare('SELECT id, badges FROM users').all();
-    const insertBadge = db.prepare(`
-      INSERT OR IGNORE INTO user_badges (user_id, badge_key, granted_at, granted_by, visible)
-      VALUES (?, ?, datetime('now'), 'migration', ?)
-    `);
-    for (const u of allUsers) {
-      let arr = [];
-      try {
-        arr = JSON.parse(u.badges || '[]');
-      } catch {
-        arr = [];
-      }
-      if (!Array.isArray(arr)) continue;
-      const seen = new Set();
-      for (const entry of arr) {
-        let code = '';
-        let vis = 1;
-        if (typeof entry === 'string') {
-          code = String(entry).trim();
-        } else if (entry && typeof entry === 'object') {
-          code = String(entry.code || '').trim();
-          vis = entry.visible !== false ? 1 : 0;
-        }
-        if (!code || !BADGE_KEYS_MIGRATION.has(code) || seen.has(code)) continue;
-        seen.add(code);
-        insertBadge.run(u.id, code, vis);
-      }
-    }
-    db.prepare("UPDATE users SET badges = '[]' WHERE 1=1").run();
-    db.prepare("INSERT OR IGNORE INTO app_meta (key, value) VALUES ('badges_migrated_v1', '1')").run();
-  })();
-  console.log('✅ Миграция бейджей: JSON → user_badges');
-}
-
 
 // ============================================
 // КАТАЛОГ: Категории → Подкатегории → Навыки
@@ -309,12 +240,7 @@ if (categoriesCount === 0) {
     'INSERT INTO skills (subcategory_id, name, slug, description) VALUES (?, ?, ?, ?)'
   );
 
-  // ============================================
-  // Полный каталог
-  // ============================================
-
   const catalog = [
-
     // ==========================================
     // 💻 ПРОГРАММИРОВАНИЕ
     // ==========================================
@@ -1030,7 +956,7 @@ if (categoriesCount === 0) {
 
 
 // ============================================
-// ДОСТИЖЕНИЯ — 50+
+// ДОСТИЖЕНИЯ (декоративные, без XP)
 // ============================================
 
 const achievementsCount = db.prepare('SELECT COUNT(*) as c FROM achievements').get().c;
@@ -1039,104 +965,99 @@ if (achievementsCount === 0) {
   console.log('🏆 Заполняем достижения...');
 
   const insAchievement = db.prepare(
-    'INSERT INTO achievements (code, name, description, icon, xp_reward, rarity, category) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO achievements (code, name, description, icon, rarity, category) VALUES (?, ?, ?, ?, ?, ?)'
   );
 
   const achievements = [
     // ========== НАВЫКИ ==========
-    ['first_skill',        'Первый шаг',           'Добавь первый навык',                         '🌱', 50,   'common',    'skills'],
-    ['three_skills',       'Троица',                'Добавь 3 навыка',                             '🎯', 75,   'common',    'skills'],
-    ['five_skills',        'Мультиталант',          'Добавь 5 навыков',                            '🎯', 100,  'common',    'skills'],
-    ['ten_skills',         'Коллекционер',          'Добавь 10 навыков',                           '📚', 200,  'uncommon',  'skills'],
-    ['twenty_skills',      'Энциклопедист',         'Добавь 20 навыков',                           '🧠', 400,  'rare',      'skills'],
-    ['thirty_skills',      'Ходячая библиотека',    'Добавь 30 навыков',                           '📖', 700,  'epic',      'skills'],
-    ['fifty_skills',       'Мастер на все руки',    'Добавь 50 навыков — максимум!',               '👑', 1500, 'legendary', 'skills'],
-    ['three_categories',   'Разносторонний',        'Навыки в 3 разных категориях',                '🎨', 100,  'common',    'skills'],
-    ['five_categories',    'Полимат',               'Навыки в 5 разных категориях',                '💎', 250,  'uncommon',  'skills'],
-    ['eight_categories',   'Ренессанс',             'Навыки в 8 разных категориях',                '🏛️', 500,  'rare',      'skills'],
-    ['all_categories',     'Человек-оркестр',       'Навыки в каждой категории',                   '🌈', 1500, 'legendary', 'skills'],
-    ['veteran_3',          'Практик',               'Навык с 3+ годами реального опыта',           '📌', 100,  'common',    'skills'],
-    ['veteran_5',          'Ветеран',               'Навык с 5+ годами реального опыта',           '⭐', 200,  'uncommon',  'skills'],
-    ['veteran_10',         'Мастер-ветеран',        'Навык с 10+ годами реального опыта',          '🌟', 500,  'rare',      'skills'],
-    ['veteran_15',         'Гуру',                  'Навык с 15+ годами реального опыта',          '🔮', 800,  'epic',      'skills'],
-    ['veteran_20',         'Легенда',               'Навык с 20+ годами реального опыта',          '👑', 1500, 'legendary', 'skills'],
+    ['first_skill',        'Первый шаг',           'Добавь первый навык',                         '🌱', 'common',    'skills'],
+    ['three_skills',       'Троица',                'Добавь 3 навыка',                             '🎯', 'common',    'skills'],
+    ['five_skills',        'Мультиталант',          'Добавь 5 навыков',                            '🎯', 'common',    'skills'],
+    ['ten_skills',         'Коллекционер',          'Добавь 10 навыков',                           '📚', 'uncommon',  'skills'],
+    ['twenty_skills',      'Энциклопедист',         'Добавь 20 навыков',                           '🧠', 'rare',      'skills'],
+    ['thirty_skills',      'Ходячая библиотека',    'Добавь 30 навыков',                           '📖', 'epic',      'skills'],
+    ['fifty_skills',       'Мастер на все руки',    'Добавь 50 навыков — максимум!',               '👑', 'legendary', 'skills'],
+    ['three_categories',   'Разносторонний',        'Навыки в 3 разных категориях',                '🎨', 'common',    'skills'],
+    ['five_categories',    'Полимат',               'Навыки в 5 разных категориях',                '💎', 'uncommon',  'skills'],
+    ['eight_categories',   'Ренессанс',             'Навыки в 8 разных категориях',                '🏛️', 'rare',      'skills'],
+    ['all_categories',     'Человек-оркестр',       'Навыки в каждой категории',                   '🌈', 'legendary', 'skills'],
 
     // ========== СТРИКИ ==========
-    ['first_checkin',      'Начало пути',           'Сделай первый чекин',                         '✅', 25,   'common',    'streaks'],
-    ['streak_3',           'Три дня подряд',        'Стрик 3 дня',                                 '🔥', 30,   'common',    'streaks'],
-    ['streak_7',           'Неделя огня',           'Стрик 7 дней',                                '🔥', 75,   'common',    'streaks'],
-    ['streak_14',          'Две недели',            'Стрик 14 дней',                               '🔥', 150,  'uncommon',  'streaks'],
-    ['streak_21',          'Три недели',            'Стрик 21 день — привычка!',                   '💪', 200,  'uncommon',  'streaks'],
-    ['streak_30',          'Месяц стабильности',    'Стрик 30 дней',                               '💪', 300,  'uncommon',  'streaks'],
-    ['streak_60',          'Два месяца!',           'Стрик 60 дней',                               '⚡', 500,  'rare',      'streaks'],
-    ['streak_90',          'Квартал!',              'Стрик 90 дней — четверть года',                '⚡', 700,  'rare',      'streaks'],
-    ['streak_100',         'Сотня!',                'Стрик 100 дней',                              '💎', 800,  'rare',      'streaks'],
-    ['streak_150',         'Полгода почти',         'Стрик 150 дней',                              '💎', 1000, 'epic',      'streaks'],
-    ['streak_200',         'Несокрушимый',          'Стрик 200 дней',                              '🏔️', 1200, 'epic',      'streaks'],
-    ['streak_300',         'Машина',                'Стрик 300 дней — почти год!',                 '🤖', 1800, 'epic',      'streaks'],
-    ['streak_365',         'Годовой марафон',       'Стрик 365 дней!',                             '👑', 3000, 'legendary', 'streaks'],
-    ['total_checkins_10',  'Десятка',               '10 чекинов всего',                            '📊', 30,   'common',    'streaks'],
-    ['total_checkins_50',  'Полтинник',             '50 чекинов всего',                            '📊', 100,  'common',    'streaks'],
-    ['total_checkins_100', 'Сотня отметок',         '100 чекинов всего',                           '📈', 200,  'uncommon',  'streaks'],
-    ['total_checkins_500', 'Пятьсот!',              '500 чекинов всего',                           '📈', 500,  'rare',      'streaks'],
-    ['total_checkins_1000','Тысячник',              '1000 чекинов всего',                          '🏆', 1000, 'epic',      'streaks'],
-    ['multi_streak_3',     'Жонглёр',               'Стрик 7+ дней по 3 навыкам одновременно',     '🤹', 200,  'uncommon',  'streaks'],
-    ['multi_streak_5',     'Многозадачный',         'Стрик 7+ дней по 5 навыкам одновременно',     '🤖', 500,  'rare',      'streaks'],
-    ['multi_streak_10',    'Абсолютная дисциплина', 'Стрик 7+ дней по 10 навыкам одновременно',    '👁️', 1000, 'epic',      'streaks'],
-    ['weekend_warrior',    'Воин выходных',         '4 выходных подряд с чекинами',                '⚔️', 100,  'common',    'streaks'],
-    ['perfectionist_week', 'Перфекционист',         'Все навыки отмечены 7 дней подряд',            '✨', 300,  'rare',      'streaks'],
-    ['perfectionist_month','Абсолют',               'Все навыки отмечены 30 дней подряд',           '🌟', 1000, 'epic',      'streaks'],
+    ['first_checkin',      'Начало пути',           'Сделай первый чекин',                         '✅', 'common',    'streaks'],
+    ['streak_3',           'Три дня подряд',        'Стрик 3 дня',                                 '🔥', 'common',    'streaks'],
+    ['streak_7',           'Неделя огня',           'Стрик 7 дней',                                '🔥', 'common',    'streaks'],
+    ['streak_14',          'Две недели',            'Стрик 14 дней',                               '🔥', 'uncommon',  'streaks'],
+    ['streak_21',          'Три недели',            'Стрик 21 день — привычка!',                   '💪', 'uncommon',  'streaks'],
+    ['streak_30',          'Месяц стабильности',    'Стрик 30 дней',                               '💪', 'uncommon',  'streaks'],
+    ['streak_60',          'Два месяца!',           'Стрик 60 дней',                               '⚡', 'rare',      'streaks'],
+    ['streak_90',          'Квартал!',              'Стрик 90 дней — четверть года',                '⚡', 'rare',      'streaks'],
+    ['streak_100',         'Сотня!',                'Стрик 100 дней',                              '💎', 'rare',      'streaks'],
+    ['streak_150',         'Полгода почти',         'Стрик 150 дней',                              '💎', 'epic',      'streaks'],
+    ['streak_200',         'Несокрушимый',          'Стрик 200 дней',                              '🏔️', 'epic',      'streaks'],
+    ['streak_300',         'Машина',                'Стрик 300 дней — почти год!',                 '🤖', 'epic',      'streaks'],
+    ['streak_365',         'Годовой марафон',       'Стрик 365 дней!',                             '👑', 'legendary', 'streaks'],
+    ['total_checkins_10',  'Десятка',               '10 чекинов всего',                            '📊', 'common',    'streaks'],
+    ['total_checkins_50',  'Полтинник',             '50 чекинов всего',                            '📊', 'common',    'streaks'],
+    ['total_checkins_100', 'Сотня отметок',         '100 чекинов всего',                           '📈', 'uncommon',  'streaks'],
+    ['total_checkins_500', 'Пятьсот!',              '500 чекинов всего',                           '📈', 'rare',      'streaks'],
+    ['total_checkins_1000','Тысячник',              '1000 чекинов всего',                          '🏆', 'epic',      'streaks'],
+    ['multi_streak_3',     'Жонглёр',               'Стрик 7+ дней по 3 навыкам одновременно',     '🤹', 'uncommon',  'streaks'],
+    ['multi_streak_5',     'Многозадачный',         'Стрик 7+ дней по 5 навыкам одновременно',     '🤖', 'rare',      'streaks'],
+    ['multi_streak_10',    'Абсолютная дисциплина', 'Стрик 7+ дней по 10 навыкам одновременно',    '👁️', 'epic',      'streaks'],
+    ['weekend_warrior',    'Воин выходных',         '4 выходных подряд с чекинами',                '⚔️', 'common',    'streaks'],
+    ['perfectionist_week', 'Перфекционист',         'Все навыки отмечены 7 дней подряд',            '✨', 'rare',      'streaks'],
+    ['perfectionist_month','Абсолют',               'Все навыки отмечены 30 дней подряд',           '🌟', 'epic',      'streaks'],
 
     // ========== РАНГИ ==========
-    ['rank_e',             'Ранг E!',               'Достичь ранга E в навыке',                    '⚪', 25,   'common',    'ranks'],
-    ['rank_d',             'Ранг D!',               'Достичь ранга D в навыке',                    '🟢', 100,  'common',    'ranks'],
-    ['rank_c',             'Ранг C!',               'Достичь ранга C в навыке',                    '🔵', 200,  'uncommon',  'ranks'],
-    ['rank_b',             'Ранг B!',               'Достичь ранга B в навыке',                    '🟣', 400,  'rare',      'ranks'],
-    ['rank_a',             'Ранг A!',               'Достичь ранга A в навыке',                    '🟠', 800,  'epic',      'ranks'],
-    ['rank_s',             'Ранг S!',               'Достичь ранга S — мастерство!',               '🔴', 2000, 'legendary', 'ranks'],
-    ['overall_e',          'Общий E',               'Общий ранг E',                                '⚪', 25,   'common',    'ranks'],
-    ['overall_d',          'Общий D',               'Общий ранг D',                                '🟢', 100,  'common',    'ranks'],
-    ['overall_c',          'Общий C',               'Общий ранг C',                                '🔵', 200,  'uncommon',  'ranks'],
-    ['overall_b',          'Общий B',               'Общий ранг B',                                '🟣', 500,  'rare',      'ranks'],
-    ['overall_a',          'Общий A',               'Общий ранг A',                                '🟠', 1000, 'epic',      'ranks'],
-    ['overall_s',          'Общий S — Легенда',     'Общий ранг S. Ты легенда!',                   '👑', 3000, 'legendary', 'ranks'],
-    ['multi_rank_b',       'B× три',                'Ранг B+ в 3 разных навыках',                  '💜', 600,  'rare',      'ranks'],
-    ['multi_rank_a',       'A× два',                'Ранг A+ в 2 разных навыках',                  '🧡', 1000, 'epic',      'ranks'],
-    ['multi_rank_a3',      'A× три',                'Ранг A+ в 3 разных навыках',                  '🔥', 2000, 'legendary', 'ranks'],
+    ['rank_e',             'Ранг E',                'Достичь ранга E в навыке',                    '⚪', 'common',    'ranks'],
+    ['rank_d',             'Ранг D — Практик',      'Достичь ранга D в навыке',                    '🟢', 'common',    'ranks'],
+    ['rank_c',             'Ранг C — Знаток',       'Достичь ранга C в навыке',                    '🔵', 'uncommon',  'ranks'],
+    ['rank_b',             'Ранг B — Эксперт',      'Достичь ранга B в навыке',                    '🟣', 'rare',      'ranks'],
+    ['rank_a',             'Ранг A — Мастер',       'Достичь ранга A в навыке',                    '🟠', 'epic',      'ranks'],
+    ['rank_s',             'Ранг S — Легенда',      'Достичь ранга S в навыке',                    '🔴', 'legendary', 'ranks'],
+    ['overall_e',          'Общий E',               'Общий ранг E',                                '⚪', 'common',    'ranks'],
+    ['overall_d',          'Общий D',               'Общий ранг D',                                '🟢', 'common',    'ranks'],
+    ['overall_c',          'Общий C',               'Общий ранг C',                                '🔵', 'uncommon',  'ranks'],
+    ['overall_b',          'Общий B',               'Общий ранг B',                                '🟣', 'rare',      'ranks'],
+    ['overall_a',          'Общий A',               'Общий ранг A',                                '🟠', 'epic',      'ranks'],
+    ['overall_s',          'Общий S — Легенда',     'Общий ранг S. Ты легенда!',                   '👑', 'legendary', 'ranks'],
+    ['multi_rank_b',       'B× три',                'Ранг B+ в 3 разных навыках',                  '💜', 'rare',      'ranks'],
+    ['multi_rank_a',       'A× два',                'Ранг A+ в 2 разных навыках',                  '🧡', 'epic',      'ranks'],
+    ['multi_rank_a3',      'A× три',                'Ранг A+ в 3 разных навыках',                  '🔥', 'legendary', 'ranks'],
 
     // ========== СОЦИАЛЬНЫЕ ==========
-    ['first_endorsement',  'Первое признание',      'Получи первое подтверждение',                  '🤝', 50,   'common',    'social'],
-    ['five_endorsements',  'Одобренный',             'Получи 5 подтверждений',                      '🤝', 100,  'common',    'social'],
-    ['ten_endorsements',   'Признанный',             'Получи 10 подтверждений',                     '🤝', 200,  'uncommon',  'social'],
-    ['twenty_five_endorse','Уважаемый',              'Получи 25 подтверждений',                     '🤝', 350,  'uncommon',  'social'],
-    ['fifty_endorsements', 'Авторитет',              'Получи 50 подтверждений',                     '🤝', 600,  'rare',      'social'],
-    ['hundred_endorsements','Гуру сообщества',       'Получи 100 подтверждений',                    '🤝', 1200, 'epic',      'social'],
-    ['endorser_5',         'Поддержка×5',            'Подтверди 5 навыков другим',                   '👏', 50,   'common',    'social'],
-    ['endorser_10',        'Поддержка×10',           'Подтверди 10 навыков другим',                  '👏', 100,  'common',    'social'],
-    ['endorser_25',        'Помощник',               'Подтверди 25 навыков другим',                  '👏', 200,  'uncommon',  'social'],
-    ['endorser_50',        'Менторство',             'Подтверди 50 навыков другим',                  '🎓', 400,  'rare',      'social'],
-    ['endorser_100',       'Наставник',              'Подтверди 100 навыков другим',                 '🧙', 800,  'epic',      'social'],
-    ['first_follower',     'Первый фолловер',        'Кто-то подписался на тебя',                   '👤', 50,   'common',    'social'],
-    ['ten_followers',      'Популярный',             '10 подписчиков',                              '👥', 150,  'uncommon',  'social'],
-    ['twenty_five_follow', 'Известный',              '25 подписчиков',                              '🌟', 300,  'uncommon',  'social'],
-    ['fifty_followers',    'Звезда',                 '50 подписчиков',                              '⭐', 500,  'rare',      'social'],
-    ['hundred_followers',  'Инфлюенсер',             '100 подписчиков',                             '💫', 1000, 'epic',      'social'],
+    ['first_endorsement',  'Первое признание',      'Получи первое подтверждение',                  '🤝', 'common',    'social'],
+    ['five_endorsements',  'Одобренный',             'Получи 5 подтверждений',                      '🤝', 'common',    'social'],
+    ['ten_endorsements',   'Признанный',             'Получи 10 подтверждений',                     '🤝', 'uncommon',  'social'],
+    ['twenty_five_endorse','Уважаемый',              'Получи 25 подтверждений',                     '🤝', 'uncommon',  'social'],
+    ['fifty_endorsements', 'Авторитет',              'Получи 50 подтверждений',                     '🤝', 'rare',      'social'],
+    ['hundred_endorsements','Гуру сообщества',       'Получи 100 подтверждений',                    '🤝', 'epic',      'social'],
+    ['endorser_5',         'Поддержка×5',            'Подтверди 5 навыков другим',                   '👏', 'common',    'social'],
+    ['endorser_10',        'Поддержка×10',           'Подтверди 10 навыков другим',                  '👏', 'common',    'social'],
+    ['endorser_25',        'Помощник',               'Подтверди 25 навыков другим',                  '👏', 'uncommon',  'social'],
+    ['endorser_50',        'Менторство',             'Подтверди 50 навыков другим',                  '🎓', 'rare',      'social'],
+    ['endorser_100',       'Наставник',              'Подтверди 100 навыков другим',                 '🧙', 'epic',      'social'],
+    ['first_follower',     'Первый фолловер',        'Кто-то подписался на тебя',                   '👤', 'common',    'social'],
+    ['ten_followers',      'Популярный',             '10 подписчиков',                              '👥', 'uncommon',  'social'],
+    ['twenty_five_follow', 'Известный',              '25 подписчиков',                              '🌟', 'uncommon',  'social'],
+    ['fifty_followers',    'Звезда',                 '50 подписчиков',                              '⭐', 'rare',      'social'],
+    ['hundred_followers',  'Инфлюенсер',             '100 подписчиков',                             '💫', 'epic',      'social'],
 
     // ========== ОСОБЫЕ ==========
-    ['early_bird',         'Ранняя пташка',          'Чекин до 7 утра',                             '🐦', 50,   'common',    'special'],
-    ['night_owl',          'Ночная сова',            'Чекин после полуночи',                        '🦉', 50,   'common',    'special'],
-    ['new_year',           'Новогодний',             'Чекин 1 января',                              '🎆', 100,  'uncommon',  'special'],
-    ['halloween',          'Хэллоуинский',           'Чекин 31 октября',                            '🎃', 100,  'uncommon',  'special'],
-    ['birthday_streak',    'День рождения стрика',   'Стрик ровно 365 дней',                        '🎂', 500,  'legendary', 'special'],
-    ['comeback',           'Возвращение',            'Вернись после 30+ дней без чекинов',           '🔄', 100,  'uncommon',  'special'],
-    ['speed_learner',      'Быстрый старт',          'Добавь 5 навыков в первый день',               '⚡', 100,  'uncommon',  'special'],
-    ['diverse_day',        'Разнообразный день',     'Чекин по 5+ навыкам за один день',             '🌈', 75,   'common',    'special'],
-    ['marathon_day',       'Марафон',                'Чекин по 10+ навыкам за один день',            '🏃', 200,  'uncommon',  'special'],
+    ['early_bird',         'Ранняя пташка',          'Чекин до 7 утра',                             '🐦', 'common',    'special'],
+    ['night_owl',          'Ночная сова',            'Чекин после полуночи',                        '🦉', 'common',    'special'],
+    ['new_year',           'Новогодний',             'Чекин 1 января',                              '🎆', 'uncommon',  'special'],
+    ['halloween',          'Хэллоуинский',           'Чекин 31 октября',                            '🎃', 'uncommon',  'special'],
+    ['birthday_streak',    'День рождения стрика',   'Стрик ровно 365 дней',                        '🎂', 'legendary', 'special'],
+    ['comeback',           'Возвращение',            'Вернись после 30+ дней без чекинов',           '🔄', 'uncommon',  'special'],
+    ['speed_learner',      'Быстрый старт',          'Добавь 5 навыков в первый день',               '⚡', 'uncommon',  'special'],
+    ['diverse_day',        'Разнообразный день',     'Чекин по 5+ навыкам за один день',             '🌈', 'common',    'special'],
+    ['marathon_day',       'Марафон',                'Чекин по 10+ навыкам за один день',            '🏃', 'uncommon',  'special'],
   ];
 
   const fillAchievements = db.transaction(() => {
-    for (const [code, name, desc, icon, xp, rarity, category] of achievements) {
-      insAchievement.run(code, name, desc, icon, xp, rarity, category);
+    for (const [code, name, desc, icon, rarity, category] of achievements) {
+      insAchievement.run(code, name, desc, icon, rarity, category);
     }
   });
 

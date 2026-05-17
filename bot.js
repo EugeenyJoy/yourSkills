@@ -104,17 +104,29 @@ bot.onText(/\/stats/, async (msg) => {
       );
     }
 
-    // Получаем навыки
+    // Получаем навыки + дни чекинов для сортировки
     const skills = db.prepare(`
       SELECT
         us.*, s.name as skill_name,
-        c.icon as category_icon
+        sc.icon as subcategory_icon,
+        c.icon as category_icon,
+        (SELECT COUNT(DISTINCT date) FROM checkins
+           WHERE user_id = us.user_id AND skill_id = us.skill_id) as days
       FROM user_skills us
       JOIN skills s ON us.skill_id = s.id
-      JOIN categories c ON s.category_id = c.id
+      JOIN subcategories sc ON s.subcategory_id = sc.id
+      JOIN categories c ON sc.category_id = c.id
       WHERE us.user_id = ?
-      ORDER BY (us.foundation_xp + us.bonus_xp) DESC
     `).all(userId);
+
+    // Сортируем по рангу (без +), потом по дням
+    const RANK_IDX = { F:0, E:1, D:2, C:3, B:4, A:5, S:6 };
+    skills.sort((a, b) => {
+      const da = RANK_IDX[(a.rank || 'F').replace('+','')] || 0;
+      const db_ = RANK_IDX[(b.rank || 'F').replace('+','')] || 0;
+      if (db_ !== da) return db_ - da;
+      return (b.days || 0) - (a.days || 0);
+    });
 
     // Статистика
     const followers = db.prepare(
@@ -134,7 +146,6 @@ bot.onText(/\/stats/, async (msg) => {
       `📊 *Статистика: ${user.first_name}*`,
       '',
       `⚡ Общий ранг: *${user.overall_rank}*`,
-      `🏆 XP: ${user.overall_xp}`,
       `👥 Подписчики: ${followers}`,
       `🤝 Подтверждений: ${endorsements}`,
       `📅 Всего чекинов: ${checkins}`,
@@ -145,14 +156,13 @@ bot.onText(/\/stats/, async (msg) => {
       text.push('*Навыки:*');
 
       skills.forEach(skill => {
-        const totalXP = skill.foundation_xp + skill.bonus_xp;
         const streak = skill.current_streak > 0
           ? ` 🔥${skill.current_streak}`
           : '';
-
+        const daysStr = skill.days > 0 ? ` · ${skill.days}д` : '';
         text.push(
           `${skill.category_icon} ${skill.skill_name} — ` +
-          `*${skill.rank}* (${totalXP} XP)${streak}`
+          `*${skill.rank}*${daysStr}${streak}`
         );
       });
     } else {
@@ -192,19 +202,26 @@ bot.onText(/\/card/, async (msg) => {
       );
     }
 
-    // Топ-3 навыка
+    // Топ-3 навыка — сортировка по рангу (числовой индекс) и дням
     const topSkills = db.prepare(`
       SELECT
+        us.skill_id,
         us.rank,
         us.current_streak,
-        (us.foundation_xp + us.bonus_xp) as total_xp,
         s.name as skill_name,
-        c.icon as category_icon
+        c.icon as category_icon,
+        (SELECT COUNT(DISTINCT date) FROM checkins
+           WHERE user_id = us.user_id AND skill_id = us.skill_id) as days,
+        CASE REPLACE(COALESCE(us.rank,'F'),'+','')
+          WHEN 'F' THEN 0 WHEN 'E' THEN 1 WHEN 'D' THEN 2 WHEN 'C' THEN 3
+          WHEN 'B' THEN 4 WHEN 'A' THEN 5 WHEN 'S' THEN 6 ELSE 0
+        END as rank_num
       FROM user_skills us
       JOIN skills s ON us.skill_id = s.id
-      JOIN categories c ON s.category_id = c.id
+      JOIN subcategories sc ON s.subcategory_id = sc.id
+      JOIN categories c ON sc.category_id = c.id
       WHERE us.user_id = ?
-      ORDER BY total_xp DESC
+      ORDER BY rank_num DESC, days DESC
       LIMIT 3
     `).all(userId);
 
@@ -220,12 +237,13 @@ bot.onText(/\/card/, async (msg) => {
     // Формируем карточку
     const rankEmoji = {
       'S': '🔴', 'A': '🟠', 'B': '🟣',
-      'C': '🔵', 'D': '🟢', 'E': '⚪'
+      'C': '🔵', 'D': '🟢', 'E': '⚪', 'F': '⚫'
     };
+    const baseRank = (user.overall_rank || 'F').replace('+','');
 
     let card = [
       '┌─────────────────────┐',
-      `│  ${rankEmoji[user.overall_rank] || '⚪'} Ранг: *${user.overall_rank}*`,
+      `│  ${rankEmoji[baseRank] || '⚫'} Ранг: *${user.overall_rank}*`,
       '│',
       `│  👤 *${user.first_name}${user.last_name ? ' ' + user.last_name : ''}*`,
     ];
@@ -256,7 +274,6 @@ bot.onText(/\/card/, async (msg) => {
 
     card.push('│');
     card.push(`│  🏆 Достижений: ${achievementCount}`);
-    card.push(`│  ⚡ XP: ${user.overall_xp}`);
     card.push('└─────────────────────┘');
     card.push('');
     card.push('🎴 _yourSkills — покажи свои способности_');
@@ -411,6 +428,41 @@ bot.onText(/\/streak/, async (msg) => {
   }
 });
 
+// ============================================
+// КОМАНДА: /recalc (админская)
+// ============================================
+// Запускает ночной пересчёт рангов вручную.
+// Доступна только владельцу бота (см. ADMIN_ID в .env).
+
+bot.onText(/\/recalc/, async (msg) => {
+  const chatId = msg.chat.id;
+
+  // ADMIN_IDS — через запятую: "12345,67890"
+  const adminIds = (process.env.ADMIN_IDS || '')
+    .split(',')
+    .map(s => parseInt(s.trim()))
+    .filter(n => Number.isFinite(n));
+
+  if (!adminIds.includes(msg.from.id)) {
+    return; // молча игнорируем не-админов
+  }
+
+  await bot.sendMessage(chatId, '🌙 Запускаю пересчёт...');
+
+  try {
+    const skillsRouter = require('./routes/skills');
+    const result = skillsRouter.recalcAllSkillsForAllUsers();
+    await bot.sendMessage(chatId,
+      `✅ Готово за ${result.elapsed}с\n` +
+      `Юзеров: ${result.usersProcessed}\n` +
+      `Скиллов: ${result.skillsProcessed}\n` +
+      `Падений ранга: ${result.demotions}`
+    );
+  } catch (err) {
+    await bot.sendMessage(chatId, `❌ ${err.message}`);
+  }
+});
+
 
 // ============================================
 // АВТОМАТИЧЕСКИЕ НАПОМИНАНИЯ
@@ -544,16 +596,28 @@ function sleep(ms) {
 
 // Храним дату последней отправки чтобы не слать повторно
 let lastReminderDate = null;
+let lastRankRecalcDate = null;
 
 setInterval(() => {
   const now = new Date();
   const hour = now.getHours();
   const today = now.toISOString().split('T')[0];
 
-  // Отправляем в 20:00 (один раз в день)
+  // 20:00 — напоминания о стриках
   if (hour === 20 && lastReminderDate !== today) {
     lastReminderDate = today;
     sendStreakReminders();
+  }
+
+  // 03:00 — ночной пересчёт рангов
+  if (hour === 3 && lastRankRecalcDate !== today) {
+    lastRankRecalcDate = today;
+    try {
+      const skillsRouter = require('./routes/skills');
+      skillsRouter.recalcAllSkillsForAllUsers();
+    } catch (err) {
+      console.error('❌ Ночной пересчёт упал:', err.message);
+    }
   }
 }, 60 * 60 * 1000); // Проверяем каждый час
 

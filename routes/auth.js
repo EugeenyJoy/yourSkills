@@ -1,13 +1,14 @@
 // ============================================
-// routes/auth.js — Авторизация v3
+// routes/auth.js — Авторизация v4
 // ============================================
 
 const express = require('express');
 const router = express.Router();
 const db = require('../database');
 const badgeLib = require('../lib/badges');
+const { RANK_ORDER, getTitleByRank } = require('../lib/ranks');
 
-// ID создателя — ЗАМЕНИ НА СВОЙ Telegram ID
+// ID создателя
 const CREATOR_ID = parseInt(process.env.CREATOR_ID) || null;
 
 // ============================================
@@ -17,8 +18,8 @@ const CREATOR_ID = parseInt(process.env.CREATOR_ID) || null;
 const findUser = db.prepare('SELECT * FROM users WHERE id = ?');
 
 const createUser = db.prepare(`
-  INSERT INTO users (id, first_name, last_name, username, photo_url, language_code, badges)
-  VALUES (?, ?, ?, ?, ?, ?, '[]')
+  INSERT INTO users (id, first_name, last_name, username, photo_url, language_code)
+  VALUES (?, ?, ?, ?, ?, ?)
 `);
 
 const updateUser = db.prepare(`
@@ -28,16 +29,18 @@ const updateUser = db.prepare(`
   WHERE id = ?
 `);
 
+// Сортируем скиллы: сначала по числовому рангу (DESC), потом по уник. дням чекинов
 const getUserSkills = db.prepare(`
   SELECT us.*, s.name, s.slug, s.description,
          sc.name as subcategory_name, sc.icon as subcategory_icon,
-         c.name as category_name, c.icon as category_icon, c.id as category_id
+         c.name as category_name, c.icon as category_icon, c.id as category_id,
+         (SELECT COUNT(DISTINCT date) FROM checkins
+            WHERE user_id = us.user_id AND skill_id = us.skill_id) as days
   FROM user_skills us
   JOIN skills s ON us.skill_id = s.id
   JOIN subcategories sc ON s.subcategory_id = sc.id
   JOIN categories c ON sc.category_id = c.id
   WHERE us.user_id = ?
-  ORDER BY (us.foundation_xp + us.bonus_xp) DESC
 `);
 
 const getUserAchievements = db.prepare(`
@@ -56,6 +59,43 @@ const getFollowCounts = db.prepare(`
 
 
 // ============================================
+// Хелперы
+// ============================================
+
+// Базовый ранг без + ('A+' → 'A')
+function baseOf(rank) {
+  return String(rank || 'F').replace('+', '');
+}
+
+// Числовой индекс ранга для сортировки (F=0 ... S=6)
+function rankIndex(rank) {
+  return RANK_ORDER.indexOf(baseOf(rank));
+}
+
+// Сериализация скилла для ответа
+function formatSkill(s) {
+  const rank = s.rank || 'F';
+  const base = baseOf(rank);
+  const plus = rank.endsWith('+');
+  return {
+    id: s.skill_id,
+    name: s.name,
+    slug: s.slug,
+    rank,                                    // 'F' .. 'S', может с '+'
+    baseRank: base,
+    plus,
+    title: getTitleByRank(base),             // 'Практик'... или null
+    days: s.days || 0,                       // уник. дней чекинов
+    activeYears: s.active_years || 0,        // декор
+    streak: s.current_streak || 0,
+    bestStreak: s.best_streak || 0,
+    categoryIcon: s.category_icon,
+    subcategoryIcon: s.subcategory_icon,
+  };
+}
+
+
+// ============================================
 // POST /api/auth/login
 // ============================================
 
@@ -63,25 +103,20 @@ router.post('/login', (req, res) => {
   try {
     const { initData } = req.body;
 
-    // В DEV пропускаем без initData
     if (!initData && process.env.NODE_ENV !== 'development') {
       return res.status(400).json({ error: 'initData обязателен' });
     }
 
-    // Валидируем данные Telegram
     const tgUser = req.app.validateTelegramData(initData || '');
     if (!tgUser) {
       return res.status(403).json({ error: 'Невалидные данные Telegram' });
     }
 
-    // Ищем или создаём пользователя
     let user = findUser.get(tgUser.id);
     let isNew = false;
 
     if (!user) {
-      // Новый пользователь
       isNew = true;
-
       createUser.run(
         tgUser.id,
         tgUser.username || tgUser.first_name || 'User',
@@ -90,7 +125,6 @@ router.post('/login', (req, res) => {
         tgUser.photo_url || '',
         tgUser.language_code || 'ru'
       );
-
       user = findUser.get(tgUser.id);
       console.log(`👤 Новый пользователь: ${user.first_name} (#${user.id})`);
 
@@ -100,11 +134,10 @@ router.post('/login', (req, res) => {
       badgeLib.maybeGrantEarlyAdopter(tgUser.id);
 
     } else {
-      // Обновляем данные
       updateUser.run(
         user.first_name || tgUser.username || tgUser.first_name || 'User',
-        user.last_name || tgUser.last_name || '',
-        user.username || tgUser.username || '',
+        user.last_name  || tgUser.last_name || '',
+        user.username   || tgUser.username  || '',
         tgUser.photo_url || user.photo_url,
         tgUser.language_code || user.language_code,
         tgUser.id
@@ -116,14 +149,21 @@ router.post('/login', (req, res) => {
       }
     }
 
-    // Собираем данные профиля
-    const skills = getUserSkills.all(user.id);
+    // Скиллы и сортировка по рангу
+    const rawSkills = getUserSkills.all(user.id);
+    rawSkills.sort((a, b) => {
+      const ra = rankIndex(a.rank);
+      const rb = rankIndex(b.rank);
+      if (rb !== ra) return rb - ra;       // выше ранг — выше в списке
+      return (b.days || 0) - (a.days || 0); // потом по дням
+    });
+
     const achievements = getUserAchievements.all(user.id);
     const social = getFollowCounts.get(user.id, user.id);
 
-    // Группируем навыки по категориям
+    // Группировка по категориям
     const categoriesMap = new Map();
-    for (const skill of skills) {
+    for (const skill of rawSkills) {
       if (!categoriesMap.has(skill.category_id)) {
         categoriesMap.set(skill.category_id, {
           id: skill.category_id,
@@ -132,24 +172,8 @@ router.post('/login', (req, res) => {
           skills: []
         });
       }
-      categoriesMap.get(skill.category_id).skills.push({
-        id: skill.skill_id,
-        name: skill.name,
-        slug: skill.slug,
-        rank: skill.rank || 'F',
-        totalXP: (skill.foundation_xp || 0) + (skill.bonus_xp || 0),
-        foundationXP: skill.foundation_xp || 0,
-        bonusXP: skill.bonus_xp || 0,
-        totalYears: skill.total_years || 0,
-        activeYears: skill.active_years || 0,
-        streak: skill.current_streak || 0,
-        bestStreak: skill.best_streak || 0,
-        categoryIcon: skill.category_icon,
-        subcategoryIcon: skill.subcategory_icon,
-      });
+      categoriesMap.get(skill.category_id).skills.push(formatSkill(skill));
     }
-
-    const skillsRouter = require('./skills');
 
     const badgeDetails = badgeLib.getUserBadgesForApi(user.id);
     const badgeKeys = [...new Set(badgeLib.getVisibleUserBadgeKeys(user.id))];
@@ -162,6 +186,9 @@ router.post('/login', (req, res) => {
       'SELECT COUNT(*) as c FROM endorsements WHERE to_user_id = ?'
     ).get(user.id).c;
 
+    const overallRank = user.overall_rank || 'F';
+    const overallBase = baseOf(overallRank);
+
     res.json({
       isNew,
       user: {
@@ -172,21 +199,15 @@ router.post('/login', (req, res) => {
         profileText: user.profile_text || '',
         showProfileText: !!user.show_profile_text,
         photoUrl: user.photo_url,
-        overallRank: user.overall_rank || 'F',
-        overallXP: user.overall_xp || 0,
-        overallRankInfo: skillsRouter.getRankInfo(user.overall_xp || 0),
+        overallRank,                                 // 'F'..'S', может с '+'
+        overallBaseRank: overallBase,
+        overallPlus: overallRank.endsWith('+'),
+        overallTitle: getTitleByRank(overallBase),   // 'Мастер' и т.п. или null
         badges: badgeDetails,
         badgeKeys,
         createdAt: user.created_at,
       },
-      skills: skills.map(s => ({
-        id: s.skill_id,
-        name: s.name,
-        rank: s.rank || 'F',
-        totalXP: (s.foundation_xp || 0) + (s.bonus_xp || 0),
-        streak: s.current_streak || 0,
-        categoryIcon: s.category_icon,
-      })),
+      skills: rawSkills.map(formatSkill),
       categories: Array.from(categoriesMap.values()),
       achievements: achievements.map(a => ({
         id: a.id,
@@ -202,7 +223,7 @@ router.post('/login', (req, res) => {
         following: social.following,
       },
       stats: {
-        totalSkills: skills.length,
+        totalSkills: rawSkills.length,
         totalCheckins,
         receivedEndorsements: totalEndorsements,
       }
@@ -240,7 +261,7 @@ router.get('/check', (req, res) => {
     });
   } catch (error) {
     console.error('❌ Проверка авторизации:', error.message);
-    res.status(500).json({ error: 'Ошибка сервера' });
+    res.status(500).json({ error: 'ошибка сервера' });
   }
 });
 

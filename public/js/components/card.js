@@ -26,7 +26,9 @@ const Card = (() => {
    */
   function renderFull(data, options = {}) {
     const { user, social, stats, categories, achievements } = data;
-    const rank = (user.overallRank || 'E').toLowerCase();
+    const isOwn = isOwnProfile(data);
+    const skills = (categories || []).flatMap(c => c.skills || []);
+    const rank = (user.overallRank || 'F').replace('+', '').toLowerCase();
     const avatarUrl = App.getAvatarUrl(user);
 
     return `
@@ -55,8 +57,8 @@ const Card = (() => {
 
         ${renderUserBadges(user.badges)}
 
-        <!-- Прогресс-бар XP -->
-        ${renderXPBar(user.overallRankInfo || user)}
+         <!-- Прогресс-бар ранга -->
+         ${renderRankBar(user, skills)}
 
         <!-- Статистика -->
         <div class="card-stats">
@@ -91,7 +93,7 @@ const Card = (() => {
       ${renderProfileActions(user, social)}
 
       <!-- ======== НАВЫКИ ПО КАТЕГОРИЯМ ======== -->
-      ${renderCategoriesSection(categories, user.isOwn)}
+      ${renderCategoriesSection(categories, isOwn)}
 
       <!-- ======== ДОСТИЖЕНИЯ ======== -->
       ${achievements && achievements.length > 0
@@ -101,29 +103,93 @@ const Card = (() => {
     `;
   }
 
+  function normalizeId(id) {
+    const num = Number(id);
+    return Number.isFinite(num) ? num : String(id);
+  }
+
+  function isOwnProfile(data) {
+    const user = data?.user || {};
+    if (data?.isOwn === true || user?.isOwn === true) return true;
+    const appUserId = App?.state?.user?.id;
+    if (appUserId == null || user?.id == null) return false;
+    return normalizeId(appUserId) === normalizeId(user.id);
+  }
+
 
   /**
-   * Прогресс-бар XP до следующего ранга
+   * Прогресс-бар общего ранга.
+   *  SKILL       — overall == max_skill: дни лучшего скилла до следующего ранга
+   *  CONVOLUTION — overall > max_skill: "X / 3 скиллов RANK" (как было)
    */
-  function renderXPBar(rankInfo) {
-    // Если передан просто user без rankInfo
-    const progress = rankInfo.progress || 0;
-    const rank = (rankInfo.rank || rankInfo.overallRank || 'E').toLowerCase();
-    const nextRank = rankInfo.nextRank;
-    const xp = rankInfo.xp || rankInfo.overallXP || 0;
-    const xpToNext = rankInfo.xpToNext || 0;
+  function renderRankBar(user, skills = []) {
+    const RANK_ORDER = ['F', 'E', 'D', 'C', 'B', 'A', 'S'];
+    const RANK_DAYS  = { F: 0, E: 7, D: 30, C: 90, B: 180, A: 365, S: 730 };
+    const baseOf = (r) => String(r || 'F').replace('+', '');
+    const idxOf  = (r) => RANK_ORDER.indexOf(baseOf(r));
+
+    const overallBase = baseOf(user.overallBaseRank || user.overallRank || 'F');
+    const overallIdx  = idxOf(overallBase);
+
+    // Нет скиллов — показываем нулевой бар к E
+    if (!skills || skills.length === 0) {
+      return `
+        <div class="rank-progress">
+          <div class="rank-label">
+            <span>0 / 3 скиллов F</span>
+            <span>до E</span>
+          </div>
+          <div class="rank-bar">
+            <div class="rank-bar-fill rank-f" style="width: 0%"></div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Лучший скилл (skills уже отсортированы DESC по рангу+дням на бэке)
+    const top = skills[0];
+    const topIdx = idxOf(top.rank);
+
+    // ===== РЕЖИМ SKILL: overall совпадает с лучшим скиллом =====
+    if (overallIdx === topIdx && overallBase !== 'S') {
+      const topBase = baseOf(top.rank);
+      const nextRank = RANK_ORDER[topIdx + 1];
+      const curThreshold  = RANK_DAYS[topBase];
+      const nextThreshold = RANK_DAYS[nextRank];
+      const days = Math.max(0, top.days || 0);
+
+      const span    = Math.max(1, nextThreshold - curThreshold);
+      const passed  = Math.max(0, days - curThreshold);
+      const percent = Math.min(100, Math.round((passed / span) * 100));
+
+      const skillName = top.name || 'Навык';
+      return `
+        <div class="rank-progress">
+          <div class="rank-label">
+            <span>${skillName}: ${days} / ${nextThreshold} дней</span>
+            <span>до ${nextRank}</span>
+          </div>
+          <div class="rank-bar">
+            <div class="rank-bar-fill rank-${topBase.toLowerCase()}" style="width: ${percent}%"></div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ===== РЕЖИМ CONVOLUTION (как было) =====
+    const skillsAtBase = skills.filter(s => baseOf(s.rank) === overallBase).length;
+    const current  = Math.min(skillsAtBase, 3);
+    const nextRank = RANK_ORDER[overallIdx + 1];
+    const percent  = Math.min(100, Math.round((current / 3) * 100));
 
     return `
-      <div class="xp-progress">
-        <div class="xp-label">
-          <span>${App.formatNumber(xp)} XP</span>
-          <span>${nextRank ? `до ${nextRank}: ${App.formatNumber(xpToNext)}` : 'Максимальный ранг!'}</span>
+      <div class="rank-progress">
+        <div class="rank-label">
+          <span>${current} / 3 скиллов ${overallBase}</span>
+          <span>${nextRank ? `до ${nextRank}` : 'Максимальный ранг'}</span>
         </div>
-        <div class="xp-bar">
-          <div
-            class="xp-bar-fill rank-${rank}"
-            style="width: ${progress}%"
-          ></div>
+        <div class="rank-bar">
+          <div class="rank-bar-fill rank-${overallBase.toLowerCase()}" style="width: ${percent}%"></div>
         </div>
       </div>
     `;
@@ -205,7 +271,7 @@ const Card = (() => {
    */
   function renderProfileActions(user, social) {
     // Свой профиль — кнопка перехода к диалогам
-    if (user?.isOwn || (App.state.user && user?.id === App.state.user.id)) {
+    if (isOwnProfile({ user })) {
       return `
         <div class="profile-actions" style="display: flex; gap: 8px; margin-bottom: 16px;">
           <button
@@ -269,7 +335,6 @@ const Card = (() => {
     }
 
     let html = '';
-
     // Кнопка добавления (для своего профиля)
     if (isOwn) {
       html += `
@@ -304,8 +369,9 @@ const Card = (() => {
    * Одна строка навыка в списке
    */
   function renderSkillItem(skill, isOwn) {
-    const rank = (skill.rank || 'E').toLowerCase();
-    const totalXP = skill.totalXP || (skill.foundationXP + skill.bonusXP) || 0;
+    const rank = (skill.rank || 'F').replace('+', '').toLowerCase();
+    const days = skill.days || 0;
+    const activeYears = skill.activeYears || 0;
 
     return `
       <div
@@ -317,9 +383,9 @@ const Card = (() => {
         <div class="skill-info">
           <div class="skill-name">${escapeHtml(skill.name)}</div>
           <div class="skill-meta">
-            ${App.formatNumber(totalXP)} XP
-            ${skill.experienceYears > 0
-              ? ` · ${skill.experienceYears} ${pluralYears(skill.experienceYears)}`
+            ${App.formatNumber(days)} ${pluralDays(days)}
+            ${activeYears > 0
+              ? ` · ${activeYears} ${pluralYears(activeYears)}`
               : ''
             }
           </div>
@@ -476,7 +542,6 @@ const Card = (() => {
           <div class="user-name">${escapeHtml(user.firstName)} ${escapeHtml(user.lastName || '')}</div>
           <div class="user-rank" style="color: var(--rank-${rank})">
             Ранг ${user.rank || 'E'}
-            ${user.xp ? ` · ${App.formatNumber(user.xp)} XP` : ''}
             ${user.skillRank ? ` · ${user.skillRank} в навыке` : ''}
           </div>
         </div>
@@ -541,7 +606,7 @@ const Card = (() => {
 
   return {
     renderFull,
-    renderXPBar,
+    renderRankBar,
     renderSkillItem,
     renderUserItem,
     renderCompactUserBadges,

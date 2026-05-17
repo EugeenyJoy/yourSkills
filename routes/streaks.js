@@ -1,16 +1,15 @@
 // ============================================
-// routes/streaks.js — Чекины и стрики v3
+// routes/streaks.js — Чекины и стрики v4
+// ============================================
+// Чекин = единственный источник правды по практике.
+// Ранг считается в lib/ranks.js на основе уникальных дней + регулярности.
+// Стрик 🔥 — декоративный, на ранг не влияет.
 // ============================================
 
 const express = require('express');
 const router = express.Router();
 const db = require('../database');
 const authMiddleware = require('../middleware/auth');
-
-
-// ============================================
-// MIDDLEWARE
-// ============================================
 
 router.use(authMiddleware);
 
@@ -28,13 +27,13 @@ router.post('/checkin', (req, res) => {
 
     // Проверяем что навык принадлежит пользователю
     const us = db.prepare(
-      'SELECT * FROM user_skills WHERE user_id = ? AND skill_id = ?'
+      'SELECT id FROM user_skills WHERE user_id = ? AND skill_id = ?'
     ).get(userId, skillId);
     if (!us) return res.status(404).json({ error: 'Навык не найден в профиле' });
 
     const today = new Date().toISOString().split('T')[0];
 
-    // Проверяем что сегодня ещё не было чекина
+    // Дубль за сегодня
     const existing = db.prepare(
       'SELECT id FROM checkins WHERE user_id = ? AND skill_id = ? AND date = ?'
     ).get(userId, skillId, today);
@@ -46,71 +45,61 @@ router.post('/checkin', (req, res) => {
       });
     }
 
-    // Создаём чекин
+    // Записываем чекин
     db.prepare(
       'INSERT INTO checkins (user_id, skill_id, date, note) VALUES (?, ?, ?, ?)'
     ).run(userId, skillId, today, (note || '').slice(0, 500));
 
-    // Получаем функции из skills роутера
     const skillsRouter = require('./skills');
 
-    // Считаем стрик
+    // Считаем стрик ПО ЧЕКИНАМ (декоративно)
     const streak = skillsRouter.calcStreak(userId, skillId);
-    const multiplier = skillsRouter.getStreakMultiplier(streak);
-    const dailyXP = skillsRouter.getStreakDailyXP(streak);
-    const earnedXP = Math.floor(dailyXP * multiplier);
 
-    // Добавляем бонусный XP
+    // Обновляем стрики
     db.prepare(`
       UPDATE user_skills
-      SET bonus_xp = bonus_xp + ?,
-          current_streak = ?,
-          best_streak = MAX(best_streak, ?)
+      SET current_streak = ?,
+          best_streak = MAX(COALESCE(best_streak, 0), ?)
       WHERE user_id = ? AND skill_id = ?
-    `).run(earnedXP, streak, streak, userId, skillId);
+    `).run(streak, streak, userId, skillId);
 
-    // Пересчитываем полный XP
+    // Полный пересчёт ранга (учтёт +1 уникальный день, регулярность, эндорсменты)
     const result = skillsRouter.recalcSkill(userId, skillId);
 
-    // Проверяем достижения
+    // Ачивки
     skillsRouter.checkStreakAchievements(userId, skillId, streak);
     skillsRouter.checkCheckinAchievements(userId);
 
-    // Получаем имя навыка
+    // Имя скилла для ленты и ответа
     const skill = db.prepare('SELECT name FROM skills WHERE id = ?').get(skillId);
 
-    // Стрик-рекорды в ленту
+    // Майлстоуны стрика → лента
     const milestones = [365, 300, 200, 150, 100, 90, 60, 30, 21, 14, 7, 3];
-    for (const m of milestones) {
-      if (streak === m) {
-        db.prepare(`
-          INSERT INTO feed_events (user_id, event_type, event_data)
-          VALUES (?, 'streak_milestone', ?)
-        `).run(userId, JSON.stringify({
-          skill: skill?.name, skillId, streak: m
-        }));
-        break;
-      }
+    if (milestones.includes(streak)) {
+      db.prepare(`
+        INSERT INTO feed_events (user_id, event_type, event_data)
+        VALUES (?, 'streak_milestone', ?)
+      `).run(userId, JSON.stringify({
+        skill: skill?.name, skillId, streak
+      }));
     }
 
-    // Формируем сообщение
-    let message = `+${earnedXP} XP за практику!`;
-    if (streak >= 7) message += ` 🔥 Стрик ${streak} дней!`;
-    if (multiplier > 1) message += ` (x${multiplier})`;
+    // Сообщение
+    let message = 'Чекин засчитан ✅';
+    if (streak >= 7) message += ` 🔥 Стрик ${streak} дн.`;
 
     res.json({
       message,
       skill: {
         id: skillId,
         name: skill?.name,
-        rank: result.rank,
-        totalXP: result.totalXP,
+        rank: result.rank,           // напр. 'A+' или 'C'
+        baseRank: result.baseRank,   // напр. 'A'
+        title: result.title || null  // 'Мастер' и т.п.
       },
       streak: {
         current: streak,
-        best: result.bestStreak,
-        multiplier,
-        earnedXP,
+        best: Math.max(streak, result.bestStreak || 0)
       }
     });
 
@@ -129,11 +118,11 @@ router.get('/today', (req, res) => {
   try {
     const userId = req.userId;
     const today = new Date().toISOString().split('T')[0];
-    const skillsRouter = require('./skills');
 
-    // Все навыки пользователя
+    // Навыки пользователя
     const userSkills = db.prepare(`
-      SELECT us.*, s.name, s.slug,
+      SELECT us.skill_id, us.rank, us.current_streak, us.best_streak,
+             s.name,
              sc.icon as subcategory_icon,
              c.icon as category_icon
       FROM user_skills us
@@ -155,22 +144,15 @@ router.get('/today', (req, res) => {
       const isChecked = checkedSet.has(us.skill_id);
       if (isChecked) checked++;
 
-      const streak = us.current_streak || 0;
-      const multiplier = skillsRouter.getStreakMultiplier(streak);
-      const dailyXP = skillsRouter.getStreakDailyXP(streak);
-      const potentialXP = Math.floor(dailyXP * multiplier);
-
       return {
         skillId: us.skill_id,
         name: us.name,
         rank: us.rank || 'F',
-        totalXP: (us.foundation_xp || 0) + (us.bonus_xp || 0),
-        streak,
-        multiplier,
-        potentialXP,
+        streak: us.current_streak || 0,
+        bestStreak: us.best_streak || 0,
         checkedIn: isChecked,
         categoryIcon: us.category_icon,
-        subcategoryIcon: us.subcategory_icon,
+        subcategoryIcon: us.subcategory_icon
       };
     });
 
@@ -179,7 +161,7 @@ router.get('/today', (req, res) => {
       summary: {
         checked,
         total: skills.length,
-        allDone: checked >= skills.length && skills.length > 0,
+        allDone: checked >= skills.length && skills.length > 0
       }
     });
 
@@ -200,7 +182,6 @@ router.get('/history/:skillId', (req, res) => {
     const skillId = parseInt(req.params.skillId);
     if (isNaN(skillId)) return res.status(400).json({ error: 'Неверный ID' });
 
-    // Последние 90 дней
     const days = 90;
     const checkins = db.prepare(`
       SELECT date FROM checkins
@@ -211,7 +192,6 @@ router.get('/history/:skillId', (req, res) => {
 
     const checkedDates = new Set(checkins.map(c => c.date));
 
-    // Генерируем массив 90 дней
     const calendar = [];
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date();
@@ -264,7 +244,7 @@ router.get('/stats', (req, res) => {
       totalCheckins,
       bestStreak,
       activeStreaks,
-      uniqueDays,
+      uniqueDays
     });
 
   } catch (error) {
