@@ -661,6 +661,7 @@ const UserProfilePage = {
 // ============================================
 
 const SkillDetailPage = (() => {
+  let catalogViewMode = 'grid';
 
   /**
    * Рендер страницы навыка
@@ -869,11 +870,12 @@ const SkillDetailPage = (() => {
   /**
    * Показать каталог навыков для добавления
    */
-    async function showCatalog() {
+  async function showCatalog() {
     try {
       const catalog = await API.getCatalog();
 
       let categoriesHtml = '';
+      let foldersHtml = '';
 
       catalog.forEach(cat => {
         let skillsHtml = '';
@@ -914,20 +916,31 @@ const SkillDetailPage = (() => {
           });
         }
 
+        const totalSkills = cat.subcategories
+          ? cat.subcategories.reduce((s, sub) => s + (sub.skills ? sub.skills.length : 0), 0)
+          : 0;
+
         categoriesHtml += `
-          <div class="section catalog-category" data-category="${Card.escapeHtml(cat.slug)}">
-            <div class="section-header" style="cursor: pointer;"
+          <div class="section catalog-category collapsed" data-category="${Card.escapeHtml(cat.slug)}" data-name="${Card.escapeHtml(cat.name.toLowerCase())}">
+            <div class="section-header catalog-category-header" style="cursor: pointer;"
               onclick="this.parentElement.classList.toggle('collapsed')"
             >
-              <span class="section-title">${cat.icon} ${Card.escapeHtml(cat.name)}</span>
-              <span style="font-size: 12px; color: var(--text-muted);">
-                ${cat.subcategories ? cat.subcategories.reduce((s, sub) => s + (sub.skills ? sub.skills.length : 0), 0) : 0} навыков
-              </span>
+              <span class="section-title catalog-category-title">${cat.icon} ${Card.escapeHtml(cat.name)}</span>
+              <span class="catalog-category-count">${totalSkills} навыков</span>
+              <span class="catalog-category-arrow">▾</span>
             </div>
             <div class="catalog-skills-list">
               ${skillsHtml}
             </div>
           </div>
+        `;
+
+        foldersHtml += `
+          <button type="button" class="catalog-folder-card" onclick="SkillDetailPage.openCategoryFromGrid('${Card.escapeHtml(cat.slug)}')">
+            <div class="catalog-folder-icon">${cat.icon}</div>
+            <div class="catalog-folder-title">${Card.escapeHtml(cat.name)}</div>
+            <div class="catalog-folder-meta">${totalSkills} навыков</div>
+          </button>
         `;
       });
 
@@ -936,42 +949,89 @@ const SkillDetailPage = (() => {
         <div class="search-input-wrap" style="margin-bottom: 16px;">
           <span class="search-icon">🔍</span>
           <input
+            id="catalog-search-input"
             class="search-input"
             placeholder="Поиск навыка..."
             oninput="SkillDetailPage.filterCatalog(this.value)"
           >
         </div>
 
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <button id="catalog-view-grid-btn" class="btn btn-primary btn-sm" type="button" onclick="SkillDetailPage.setCatalogView('grid')">🗂 Сетка</button>
+          <button id="catalog-view-list-btn" class="btn btn-secondary btn-sm" type="button" onclick="SkillDetailPage.setCatalogView('list')">📋 Список</button>
+        </div>
+
         <!-- Стиль для сворачивания -->
         <style>
+          .catalog-view.hidden { display: none; }
           .catalog-category.collapsed .catalog-skills-list {
             display: none;
           }
-          .catalog-category.collapsed .section-header::after {
-            content: '▸';
-            margin-left: 8px;
+          .catalog-category-header {
+            display:grid;
+            grid-template-columns: 1fr auto auto;
+            align-items:center;
+            gap:10px;
           }
-          .catalog-category .section-header::after {
-            content: '▾';
-            margin-left: 8px;
+          .catalog-category-title {
+            min-width:0;
+            overflow:hidden;
+            text-overflow:ellipsis;
+            white-space:nowrap;
+          }
+          .catalog-category-count {
             font-size: 12px;
+            color: var(--text-muted);
+            text-align:right;
+            white-space:nowrap;
           }
+          .catalog-category-arrow {
+            width: 22px;
+            text-align:center;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--accent-light);
+            line-height: 1;
+            transition: transform 0.2s ease;
+          }
+          .catalog-category.collapsed .catalog-category-arrow {
+            transform: rotate(-90deg);
+          }
+          .catalog-folder-grid {
+            display:grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap:10px;
+          }
+          .catalog-folder-card {
+            text-align:left;
+            border:1px solid rgba(255,255,255,0.14);
+            background: linear-gradient(180deg, rgba(122,92,255,0.12), rgba(27,31,71,0.35));
+            border-radius: 12px;
+            padding: 12px;
+            color: var(--text-primary);
+          }
+          .catalog-folder-card:hover {
+            cursor: pointer;
+          }
+          .catalog-folder-icon { font-size: 20px; margin-bottom: 6px; }
+          .catalog-folder-title { font-size: 14px; font-weight: 700; line-height: 1.2; margin-bottom: 2px; }
+          .catalog-folder-meta { font-size: 12px; color: var(--text-secondary); }
         </style>
 
-        <!-- Категории -->
-        <div id="catalog-content">
+        <div id="catalog-grid-view" class="catalog-view">
+          <div class="catalog-folder-grid">
+            ${foldersHtml}
+          </div>
+        </div>
+        <div id="catalog-list-view" class="catalog-view hidden">
           ${categoriesHtml}
         </div>
       `;
 
       App.showModal('Добавить навык', html);
-
-      // Сворачиваем все категории кроме первой
       setTimeout(() => {
-        const cats = document.querySelectorAll('.catalog-category');
-        cats.forEach((cat, i) => {
-          if (i > 0) cat.classList.add('collapsed');
-        });
+        SkillDetailPage.collapseAllCatalogCategories();
+        SkillDetailPage.setCatalogView('grid');
       }, 100);
 
     } catch (error) {
@@ -987,17 +1047,23 @@ const SkillDetailPage = (() => {
   function filterCatalog(query) {
     const items = document.querySelectorAll('.catalog-skill');
     const categories = document.querySelectorAll('.catalog-category');
+    const folders = document.querySelectorAll('.catalog-folder-card');
     const q = query.toLowerCase().trim();
 
     if (!q) {
-      // Показываем всё
       items.forEach(el => el.style.display = '');
-      categories.forEach(el => el.style.display = '');
+      categories.forEach(el => {
+        el.style.display = '';
+        el.classList.add('collapsed');
+      });
+      folders.forEach(el => el.style.display = '');
       return;
     }
 
-    // Скрываем не подходящие
+    SkillDetailPage.setCatalogView('list');
+
     categories.forEach(cat => {
+      cat.classList.remove('collapsed');
       const skills = cat.querySelectorAll('.catalog-skill');
       let hasVisible = false;
 
@@ -1013,6 +1079,45 @@ const SkillDetailPage = (() => {
 
       cat.style.display = hasVisible ? '' : 'none';
     });
+
+    folders.forEach(card => {
+      const title = (card.querySelector('.catalog-folder-title')?.textContent || '').toLowerCase();
+      card.style.display = title.includes(q) ? '' : 'none';
+    });
+  }
+
+  function setCatalogView(mode) {
+    catalogViewMode = mode === 'list' ? 'list' : 'grid';
+    const grid = document.getElementById('catalog-grid-view');
+    const list = document.getElementById('catalog-list-view');
+    const btnGrid = document.getElementById('catalog-view-grid-btn');
+    const btnList = document.getElementById('catalog-view-list-btn');
+    if (grid) grid.classList.toggle('hidden', catalogViewMode !== 'grid');
+    if (list) list.classList.toggle('hidden', catalogViewMode !== 'list');
+    if (btnGrid) {
+      btnGrid.classList.toggle('btn-primary', catalogViewMode === 'grid');
+      btnGrid.classList.toggle('btn-secondary', catalogViewMode !== 'grid');
+    }
+    if (btnList) {
+      btnList.classList.toggle('btn-primary', catalogViewMode === 'list');
+      btnList.classList.toggle('btn-secondary', catalogViewMode !== 'list');
+    }
+  }
+
+  function collapseAllCatalogCategories() {
+    const cats = document.querySelectorAll('.catalog-category');
+    cats.forEach(cat => cat.classList.add('collapsed'));
+  }
+
+  function openCategoryFromGrid(slug) {
+    SkillDetailPage.setCatalogView('list');
+    SkillDetailPage.collapseAllCatalogCategories();
+    const el = document.querySelector(`.catalog-category[data-category="${slug}"]`);
+    if (el) {
+      el.classList.remove('collapsed');
+      el.style.display = '';
+      el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
   }
 
 
@@ -1268,6 +1373,9 @@ const SkillDetailPage = (() => {
     render,
     showCatalog,
     filterCatalog,
+    setCatalogView,
+    collapseAllCatalogCategories,
+    openCategoryFromGrid,
     promptAddSkill,
     addSkill,
     confirmDelete,
