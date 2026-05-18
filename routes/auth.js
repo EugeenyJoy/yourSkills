@@ -131,8 +131,6 @@ router.post('/login', (req, res) => {
       if (CREATOR_ID && tgUser.id === CREATOR_ID) {
         badgeLib.grantBadge(tgUser.id, 'creator', 'system');
       }
-      badgeLib.maybeGrantEarlyAdopter(tgUser.id);
-
     } else {
       updateUser.run(
         user.first_name || tgUser.username || tgUser.first_name || 'User',
@@ -148,6 +146,9 @@ router.post('/login', (req, res) => {
         badgeLib.grantBadge(tgUser.id, 'creator', 'system');
       }
     }
+
+    // Временно: бейдж early_adopter выдаётся всем пользователям по умолчанию
+    badgeLib.maybeGrantEarlyAdopter(tgUser.id);
 
     // Скиллы и сортировка по рангу
     const rawSkills = getUserSkills.all(user.id);
@@ -175,7 +176,8 @@ router.post('/login', (req, res) => {
       categoriesMap.get(skill.category_id).skills.push(formatSkill(skill));
     }
 
-    const badgeDetails = badgeLib.getUserBadgesForApi(user.id);
+    // Возвращаем visibility, чтобы клиент корректно скрывал бейджи на карточке
+    const badgeDetails = badgeLib.getUserBadgesForApi(user.id, { includeVisibility: true });
     const badgeKeys = [...new Set(badgeLib.getVisibleUserBadgeKeys(user.id))];
 
     const totalCheckins = db.prepare(

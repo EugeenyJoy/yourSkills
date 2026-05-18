@@ -188,7 +188,7 @@ const AccountPage = (() => {
                   transition: opacity 0.2s ease;
                   opacity: ${showProfileText ? '1' : '0.5'};
                 " onInput="SettingsPage.updateCharCount()">
-                <label style="
+                <label id="toggle-icon-wrap" style="
                   display: flex;
                   align-items: center;
                   justify-content: center;
@@ -199,11 +199,12 @@ const AccountPage = (() => {
                   background: var(--bg-elevated);
                   cursor: pointer;
                   transition: all 0.2s ease;
+                  opacity: ${showProfileText ? '1' : '0.5'};
                 ">
                   <input id="settings-show-profile-text" type="checkbox" ${showProfileText ? 'checked' : ''} style="
                     display: none;
                   " onchange="SettingsPage.toggleProfileTextVisibility()">
-                  <span style="font-size: 18px;" id="toggle-icon">${showProfileText ? '✓' : '✗'}</span>
+                  <span style="font-size: 18px;" id="toggle-icon">${showProfileText ? '👁️' : '🙈'}</span>
                 </label>
               </div>
             </div>
@@ -333,11 +334,15 @@ const AccountPage = (() => {
     const checkboxEl = document.getElementById('settings-show-profile-text');
     const textEl = document.getElementById('settings-profile-text');
     const iconEl = document.getElementById('toggle-icon');
+    const iconWrapEl = document.getElementById('toggle-icon-wrap');
     
     if (checkboxEl && textEl && iconEl) {
       const isChecked = checkboxEl.checked;
       textEl.style.opacity = isChecked ? '1' : '0.5';
-      iconEl.textContent = isChecked ? '✓' : '✗';
+      iconEl.textContent = isChecked ? '👁️' : '🙈';
+      if (iconWrapEl) {
+        iconWrapEl.style.opacity = isChecked ? '1' : '0.5';
+      }
     }
   }
 
