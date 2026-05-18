@@ -5,7 +5,7 @@
 (function (global) {
   const BADGE_INFO = {
     creator: { name: 'Создатель', icon: '⚡', color: '#fbbf24' },
-    early_adopter: { name: 'Альфа пользователь', icon: 'A', color: '#a78bfa' },
+    early_adopter: { name: 'α пользователь', icon: '🌱', color: '#a78bfa' },
     verified: { name: 'Верифицирован', icon: '✅', color: '#34d399' },
     contributor: { name: 'Контрибьютор', icon: '🔧', color: '#60a5fa' },
     moderator: { name: 'Модератор', icon: '🛡️', color: '#f472b6' },
