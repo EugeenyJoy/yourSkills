@@ -185,6 +185,7 @@ const AccountPage = (() => {
     const safeLastName = Card.escapeHtml(user.lastName || '');
     const safeProfileText = Card.escapeHtml(user.profileText || '');
     const showProfileText = !!user.showProfileText;
+    const cardExpandedDefault = !!user.cardExpandedDefault;
 
     const html = `
       <div class="settings-page">
@@ -256,6 +257,26 @@ const AccountPage = (() => {
                   <span style="font-size: 18px;" id="toggle-icon">${showProfileText ? '👁️' : '🙈'}</span>
                 </label>
               </div>
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+              <span style="font-size: 13px; color: var(--text-secondary);">Развернутая карточка по умолчанию</span>
+              <label id="toggle-card-expanded-wrap" style="
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 40px;
+                height: 40px;
+                border-radius: 10px;
+                border: 1px solid rgba(255,255,255,0.12);
+                background: var(--bg-elevated);
+                cursor: pointer;
+                transition: all 0.2s ease;
+                opacity: ${cardExpandedDefault ? '1' : '0.5'};
+              ">
+                <input id="settings-card-expanded-default" type="checkbox" ${cardExpandedDefault ? 'checked' : ''} style="display:none;" onchange="SettingsPage.toggleCardExpandedDefault()">
+                <span style="font-size: 16px;" id="toggle-card-expanded-icon">${cardExpandedDefault ? '⤡' : '⤢'}</span>
+              </label>
             </div>
           </div>
         </div>
@@ -336,6 +357,7 @@ const AccountPage = (() => {
     setTimeout(() => {
       AccountPage.updateCharCount();
       AccountPage.toggleProfileTextVisibility();
+      AccountPage.toggleCardExpandedDefault();
     }, 0);
 
     return html;
@@ -347,11 +369,13 @@ const AccountPage = (() => {
       const lastNameEl = document.getElementById('settings-last-name');
       const profileTextEl = document.getElementById('settings-profile-text');
       const showProfileTextEl = document.getElementById('settings-show-profile-text');
+      const cardExpandedDefaultEl = document.getElementById('settings-card-expanded-default');
 
       const firstName = (firstNameEl?.value || '').trim();
       const lastName = (lastNameEl?.value || '').trim();
       const profileText = (profileTextEl?.value || '').trim();
       const showProfileText = !!showProfileTextEl?.checked;
+      const cardExpandedDefault = !!cardExpandedDefaultEl?.checked;
 
       if (!firstName) {
         App.showToast('Имя не может быть пустым', '⚠️');
@@ -373,6 +397,7 @@ const AccountPage = (() => {
         lastName,
         profileText,
         showProfileText,
+        cardExpandedDefault,
         badges: fullBadges,
         classes: classes.map(c => ({
           skillId: c.skillId,
@@ -436,6 +461,16 @@ const AccountPage = (() => {
     if (App.tg?.HapticFeedback) {
       App.tg.HapticFeedback.impactOccurred('light');
     }
+  }
+
+  function toggleCardExpandedDefault() {
+    const checkboxEl = document.getElementById('settings-card-expanded-default');
+    const iconEl = document.getElementById('toggle-card-expanded-icon');
+    const wrapEl = document.getElementById('toggle-card-expanded-wrap');
+    if (!checkboxEl || !iconEl || !wrapEl) return;
+    const on = checkboxEl.checked;
+    iconEl.textContent = on ? '⤡' : '⤢';
+    wrapEl.style.opacity = on ? '1' : '0.5';
   }
 
   function toggleClassVisibility(classIndex) {
@@ -619,6 +654,7 @@ const AccountPage = (() => {
     saveMyProfile,
     updateCharCount,
     toggleProfileTextVisibility,
+    toggleCardExpandedDefault,
     toggleBadgeVisibility,
     toggleClassVisibility,
     toggleFollow,
@@ -635,6 +671,7 @@ const SettingsPage = {
   saveMyProfile: (...args) => AccountPage.saveMyProfile(...args),
   updateCharCount: (...args) => AccountPage.updateCharCount(...args),
   toggleProfileTextVisibility: (...args) => AccountPage.toggleProfileTextVisibility(...args),
+  toggleCardExpandedDefault: (...args) => AccountPage.toggleCardExpandedDefault(...args),
   toggleBadgeVisibility: (...args) => AccountPage.toggleBadgeVisibility(...args),
   toggleClassVisibility: (...args) => AccountPage.toggleClassVisibility(...args),
   confirmResetProfile: (...args) => AccountPage.confirmResetProfile(...args)

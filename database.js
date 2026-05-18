@@ -32,6 +32,7 @@ db.exec(`
     overall_rank TEXT DEFAULT 'F',
     profile_text TEXT DEFAULT '',
     show_profile_text INTEGER DEFAULT 0,
+    card_expanded_default INTEGER NOT NULL DEFAULT 0,
     last_seen_at DATETIME DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -227,6 +228,11 @@ function rebuildUserSkillsWithoutLegacyYears() {
 
 // Миграция legacy-полей стажа -> initial_days
 {
+  const userCols = getTableColumns('users');
+  if (!userCols.includes('card_expanded_default')) {
+    db.exec('ALTER TABLE users ADD COLUMN card_expanded_default INTEGER NOT NULL DEFAULT 0;');
+  }
+
   const cols = getTableColumns('user_skills');
   const hasInitialDays = cols.includes('initial_days');
   if (!hasInitialDays) {

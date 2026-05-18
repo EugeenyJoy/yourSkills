@@ -192,6 +192,7 @@ function buildProfile(userId, viewerId) {
     username: user.username,
     profileText: user.profile_text || '',
     showProfileText: !!user.show_profile_text,
+    cardExpandedDefault: !!user.card_expanded_default,
     photoUrl: user.photo_url,
     overallRank,
     overallBaseRank: overallBase,
@@ -250,6 +251,7 @@ router.put('/me', (req, res) => {
     const lastName = String(req.body.lastName || '').trim();
     const profileText = String(req.body.profileText || '').trim();
     const showProfileText = req.body.showProfileText ? 1 : 0;
+    const cardExpandedDefault = req.body.cardExpandedDefault ? 1 : 0;
 
     if (!firstName) return res.status(400).json({ error: 'Имя не может быть пустым' });
     if (firstName.length > 64 || lastName.length > 64) {
@@ -283,10 +285,10 @@ router.put('/me', (req, res) => {
 
     db.prepare(`
       UPDATE users
-      SET first_name = ?, last_name = ?, profile_text = ?, show_profile_text = ?,
+      SET first_name = ?, last_name = ?, profile_text = ?, show_profile_text = ?, card_expanded_default = ?,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(firstName, lastName, profileText, showProfileText, req.userId);
+    `).run(firstName, lastName, profileText, showProfileText, cardExpandedDefault, req.userId);
 
     const data = buildProfile(req.userId, req.userId);
     res.json({ message: 'Профиль обновлён', user: data.user });

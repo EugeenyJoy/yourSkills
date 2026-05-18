@@ -203,6 +203,7 @@ router.post('/login', (req, res) => {
         username: user.username,
         profileText: user.profile_text || '',
         showProfileText: !!user.show_profile_text,
+        cardExpandedDefault: !!user.card_expanded_default,
         photoUrl: user.photo_url,
         overallRank,                                 // 'F'..'S', может с '+'
         overallBaseRank: overallBase,

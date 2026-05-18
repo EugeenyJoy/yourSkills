@@ -30,10 +30,23 @@ const Card = (() => {
     const skills = (categories || []).flatMap(c => c.skills || []);
     const rank = (user.overallRank || 'F').replace('+', '').toLowerCase();
     const avatarUrl = App.getAvatarUrl(user);
+    const cardId = `profile-card-${String(user.id || 'me').replace(/[^a-zA-Z0-9_-]/g, '')}`;
+    const expanded = user.cardExpandedDefault ? 'is-expanded' : '';
+    const accent = getHighestSkillRankAccent(skills);
 
     return `
       <!-- ======== КАРТОЧКА ======== -->
-      <div class="profile-card rank-${rank}">
+      <div id="${cardId}" class="profile-card rank-${rank} ${expanded} accent-${accent.toLowerCase()}" style="--profile-bg:url('${escapeHtml(avatarUrl)}');">
+        <button class="card-expand-toggle" onclick="Card.toggleCardExpanded('${String(user.id || 'me').replace(/[^a-zA-Z0-9_-]/g, '')}')" title="Развернуть карточку">
+          ⤢
+        </button>
+        <span class="card-corner c1">✦</span>
+        <span class="card-corner c2">✦</span>
+        <span class="card-corner c3">✦</span>
+        <span class="card-corner c4">✦</span>
+        <div class="profile-card-bg"></div>
+        <div class="profile-card-content">
+        <div class="profile-card-standard">
 
         <!-- Заголовок: аватар + имя + ранг -->
         <div class="card-header">
@@ -59,6 +72,7 @@ const Card = (() => {
          <!-- Прогресс-бар ранга -->
          ${renderRankBar(user, skills)}
         ${renderSkillClasses(categories)}
+        ${renderProfileActions(user, social, { inline: true })}
 
         <!-- Статистика -->
         <div class="card-stats">
@@ -87,10 +101,39 @@ const Card = (() => {
             <div class="card-stat-label">Подтверждения</div>
           </div>
         </div>
-      </div>
+        </div>
 
-        <!-- ======== КНОПКИ ДЕЙСТВИЙ ======== -->
-      ${renderProfileActions(user, social)}
+        <div class="profile-card-expanded-ui">
+          <div class="expanded-top-row">
+            <div class="expanded-role-pills">${renderExpandedRolePills(user.badges)}</div>
+            <div class="expanded-top-right">
+              <div class="card-rank-badge rank-${rank}">${user.overallRank || 'E'}</div>
+            </div>
+          </div>
+
+          <div class="expanded-hero-wrap">
+            <div class="expanded-hero-aura"></div>
+            <img class="expanded-hero-avatar" src="${escapeHtml(avatarUrl)}" alt="Аватар"
+              onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}'">
+          </div>
+
+          <div class="expanded-nameplate">
+            <span class="line"></span>
+            <span class="name">${escapeHtml(user.firstName)} ${escapeHtml(user.lastName || '')}</span>
+            <span class="line"></span>
+          </div>
+          ${user.showProfileText && user.profileText
+            ? `<div class="expanded-profile-text">${escapeHtml(user.profileText)}</div>`
+            : ''
+          }
+
+          ${renderExpandedProgress(user, skills)}
+          ${renderExpandedSkillCards(skills)}
+          ${renderExpandedStats(stats, social)}
+          ${renderExpandedActions(user, social)}
+        </div>
+        </div>
+      </div>
 
       <!-- ======== НАВЫКИ ПО КАТЕГОРИЯМ ======== -->
       ${renderCategoriesSection(categories, isOwn)}
@@ -151,6 +194,152 @@ const Card = (() => {
 
   function renderSkillClasses(categories = []) {
     return renderSkillClassesFromList(extractSkillClasses(categories));
+  }
+
+  function getHighestSkillRankAccent(skills = []) {
+    const order = ['S', 'A', 'B', 'C', 'D'];
+    let best = 'D';
+    let bestIdx = 999;
+    for (const s of skills || []) {
+      const base = String(s?.rank || 'D').replace('+', '');
+      const idx = order.indexOf(base);
+      if (idx !== -1 && idx < bestIdx) {
+        best = base;
+        bestIdx = idx;
+      }
+    }
+    return best;
+  }
+
+  function renderExpandedRolePills(badges) {
+    if (!badges || badges.length === 0) return '';
+    const cat = typeof BadgeCatalog !== 'undefined' ? BadgeCatalog.BADGE_INFO : null;
+    const seen = new Set();
+    const out = [];
+    for (const raw of badges) {
+      const code = typeof raw === 'string' ? raw : raw?.code;
+      if (!code || seen.has(code)) continue;
+      const vis = typeof raw === 'string' ? true : raw.visible !== false;
+      if (!vis) continue;
+      const meta = cat && cat[code] ? cat[code] : {
+        name: raw?.name || code,
+        icon: raw?.icon || '🏷️',
+        color: raw?.color || '#888'
+      };
+      out.push(`<span class="expanded-role-pill" style="--pill:${meta.color};border-color:${meta.color}88;background:${meta.color}22;color:${meta.color};">${meta.icon} ${escapeHtml(meta.name)}</span>`);
+      seen.add(code);
+      if (out.length >= 2) break;
+    }
+    return out.join('');
+  }
+
+  function renderExpandedProgress(user, skills) {
+    const RANK_ORDER = ['F', 'E', 'D', 'C', 'B', 'A', 'S'];
+    const RANK_DAYS  = { F: 0, E: 7, D: 30, C: 90, B: 180, A: 365, S: 730 };
+    const baseOf = (r) => String(r || 'F').replace('+', '');
+    const idxOf  = (r) => RANK_ORDER.indexOf(baseOf(r));
+    const overallBase = baseOf(user.overallBaseRank || user.overallRank || 'F');
+    const overallIdx = idxOf(overallBase);
+    const top = (skills || [])[0] || null;
+    if (!top) {
+      return `
+        <div class="expanded-progress-wrap">
+          <div class="expanded-progress-meta"><span>0 / 7</span><span>→ E</span></div>
+          <div class="expanded-progress-line"><div class="fill rank-f" style="width:0%"></div></div>
+        </div>
+      `;
+    }
+    const topBase = baseOf(top.rank);
+    const topIdx = idxOf(top.rank);
+    let current = 0;
+    let target = 0;
+    let nextLabel = '';
+    let percent = 0;
+    let colorRank = overallBase.toLowerCase();
+    if (overallIdx === topIdx && overallBase !== 'S') {
+      const nextRank = RANK_ORDER[topIdx + 1];
+      const cur = RANK_DAYS[topBase];
+      const next = RANK_DAYS[nextRank];
+      current = Math.max(0, top.days || 0);
+      target = next;
+      nextLabel = nextRank;
+      percent = Math.min(100, Math.round(((current - cur) / Math.max(1, next - cur)) * 100));
+      colorRank = topBase.toLowerCase();
+    } else {
+      const skillsAtBase = (skills || []).filter(s => baseOf(s.rank) === overallBase).length;
+      current = Math.min(skillsAtBase, 3);
+      target = 3;
+      const next = RANK_ORDER[overallIdx + 1];
+      nextLabel = next || overallBase;
+      percent = Math.min(100, Math.round((current / 3) * 100));
+    }
+    return `
+      <div class="expanded-progress-wrap">
+        <div class="expanded-progress-meta"><span>${current}/${target}</span><span>→ ${nextLabel}</span></div>
+        <div class="expanded-progress-line"><div class="fill rank-${colorRank}" style="width:${percent}%"></div></div>
+      </div>
+    `;
+  }
+
+  function rankStars(rank) {
+    const base = String(rank || 'D').replace('+', '');
+    const map = { D: 1, C: 2, B: 3, A: 4, S: 5 };
+    const n = map[base] || 1;
+    return '★'.repeat(n) + '☆'.repeat(5 - n);
+  }
+
+  function renderExpandedSkillCards(skills = []) {
+    const list = (skills || []).slice(0, 6);
+    if (list.length === 0) return '';
+    return `
+      <div class="expanded-skill-grid">
+        ${list.map(s => {
+          const base = String(s.rank || 'D').replace('+', '').toLowerCase();
+          return `
+            <div class="expanded-skill-card rank-${base}">
+              <div class="icon">${s.categoryIcon || s.icon || '📌'}</div>
+              <div class="name">${escapeHtml(s.name || 'Навык')}</div>
+              <div class="stars">${rankStars(s.rank)}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  function renderExpandedStats(stats, social) {
+    return `
+      <div class="expanded-stats-line">
+        <span>⚔ ${App.formatNumber(stats?.totalSkills || 0)}</span>
+        <i></i>
+        <span>👥 ${App.formatNumber(social?.followers || 0)}</span>
+        <i></i>
+        <span>👤 ${App.formatNumber(social?.following || 0)}</span>
+        <i></i>
+        <span>✓ ${App.formatNumber(stats?.receivedEndorsements || 0)}</span>
+      </div>
+    `;
+  }
+
+  function renderExpandedActions(user, social) {
+    if (isOwnProfile({ user })) {
+      return `
+        <div class="expanded-cta-wrap">
+          <button class="btn btn-primary expanded-cta" onclick="Router.navigate('/messages')">✉️ Мои сообщения</button>
+        </div>
+      `;
+    }
+    const isFollowing = social?.isFollowing;
+    const mutualFollow = social?.mutualFollow;
+    return `
+      <div class="expanded-cta-wrap" style="display:flex;gap:8px;justify-content:center;">
+        <button class="btn ${isFollowing ? 'btn-secondary' : 'btn-primary'} expanded-cta"
+          onclick="UserProfilePage.toggleFollow(${user.id}, ${isFollowing})">
+          ${isFollowing ? '✓ Вы подписаны' : '+ Подписаться'}
+        </button>
+        ${mutualFollow ? `<button class="btn btn-secondary expanded-cta" onclick="Router.navigate('/messages/${user.id}')">✉️ Написать</button>` : ''}
+      </div>
+    `;
   }
 
   function normalizeId(id) {
@@ -319,11 +508,16 @@ const Card = (() => {
    * Кнопки действий: для своего профиля — «Сообщения»,
    * для чужого — «Подписаться» + «Написать» (при взаимной подписке)
    */
-  function renderProfileActions(user, social) {
+  function renderProfileActions(user, social, options = {}) {
+    const inline = options.inline === true;
+    const wrapStyle = inline
+      ? 'display:flex; gap:8px; margin: 8px 0 14px;'
+      : 'display:flex; gap:8px; margin-bottom:16px;';
+
     // Свой профиль — кнопка перехода к диалогам
     if (isOwnProfile({ user })) {
       return `
-        <div class="profile-actions" style="display: flex; gap: 8px; margin-bottom: 16px;">
+        <div class="profile-actions" style="${wrapStyle}">
           <button
             class="btn btn-primary btn-full"
             onclick="Router.navigate('/messages')"
@@ -351,7 +545,7 @@ const Card = (() => {
       : '';
 
     return `
-      <div class="profile-actions" style="display: flex; gap: 8px; margin-bottom: 16px;">
+      <div class="profile-actions" style="${wrapStyle}">
         <button
           class="btn ${isFollowing ? 'btn-secondary' : 'btn-primary'} btn-full"
           onclick="UserProfilePage.toggleFollow(${user.id}, ${isFollowing})"
@@ -361,6 +555,12 @@ const Card = (() => {
         ${messageBtn}
       </div>
     `;
+  }
+
+  function toggleCardExpanded(userId) {
+    const cardEl = document.getElementById(`profile-card-${String(userId || 'me').replace(/[^a-zA-Z0-9_-]/g, '')}`);
+    if (!cardEl) return;
+    cardEl.classList.toggle('is-expanded');
   }
 
 
@@ -659,6 +859,7 @@ const Card = (() => {
     renderSkillClassesFromList,
     renderCompactUserBadges,
     renderAchievementsSection,
+    toggleCardExpanded,
     escapeHtml,
     pluralYears,
     pluralDays
