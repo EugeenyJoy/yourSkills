@@ -68,6 +68,7 @@ function formatSkillRow(s) {
     title: getTitleByRank(base),
     days: s.days || 0,
     initialDays: s.initial_days || 0,
+    classVisible: Number(s.class_visible) === 1,
     streak: s.current_streak || 0,
     bestStreak: s.best_streak || 0,
     categoryIcon: s.category_icon,
@@ -262,6 +263,19 @@ router.put('/me', (req, res) => {
         if (!code) continue;
         if (!badgeLib.hasBadge(req.userId, code)) continue;
         badgeLib.setBadgeVisibility(req.userId, code, b.visible !== false);
+      }
+    }
+
+    if (req.body.classes && Array.isArray(req.body.classes)) {
+      const updClassVisible = db.prepare(`
+        UPDATE user_skills
+        SET class_visible = ?
+        WHERE user_id = ? AND skill_id = ?
+      `);
+      for (const c of req.body.classes) {
+        const skillId = parseInt(c?.skillId, 10);
+        if (!Number.isInteger(skillId)) continue;
+        updClassVisible.run(c.visible !== false ? 1 : 0, req.userId, skillId);
       }
     }
 

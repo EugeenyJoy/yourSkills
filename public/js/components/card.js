@@ -55,11 +55,10 @@ const Card = (() => {
           </div>
         </div>
 
-        ${renderSkillClasses(categories)}
         ${renderUserBadges(user.badges)}
-
          <!-- Прогресс-бар ранга -->
          ${renderRankBar(user, skills)}
+        ${renderSkillClasses(categories)}
 
         <!-- Статистика -->
         <div class="card-stats">
@@ -115,13 +114,17 @@ const Card = (() => {
     return map[baseRank] || null;
   }
 
-  function extractSkillClasses(categories = []) {
+  function extractSkillClasses(categories = [], options = {}) {
+    const limit = options.limit === undefined ? 3 : Math.max(0, Number(options.limit) || 0);
+    const includeHidden = options.includeHidden === true;
     const skills = (categories || []).flatMap(c => c.skills || []);
-    return skills
-      .filter(s => s && s.rank && rankTitleByBase(String(s.rank).replace('+', '')))
+    const list = skills
+      .filter(s => s && s.rank && (includeHidden || s.classVisible !== false) && rankTitleByBase(String(s.rank).replace('+', '')))
       .map(s => {
         const baseRank = String(s.rank || 'F').replace('+', '');
         return {
+          skillId: s.id,
+          classVisible: s.classVisible !== false,
           icon: s.categoryIcon || '📌',
           skillName: s.name || 'Навык',
           rank: s.rank || baseRank,
@@ -129,6 +132,7 @@ const Card = (() => {
           title: s.title || rankTitleByBase(baseRank)
         };
       });
+    return limit > 0 ? list.slice(0, limit) : list;
   }
 
   function renderSkillClassesFromList(skillClasses) {

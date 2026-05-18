@@ -87,6 +87,7 @@ function formatSkill(s) {
     title: getTitleByRank(base),             // 'Практик'... или null
     days: s.days || 0,                       // уник. дней чекинов
     initialDays: s.initial_days || 0,
+    classVisible: Number(s.class_visible) === 1,
     streak: s.current_streak || 0,
     bestStreak: s.best_streak || 0,
     categoryIcon: s.category_icon,

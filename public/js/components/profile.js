@@ -6,6 +6,7 @@ const AccountPage = (() => {
 
   /** Черновик видимости бейджей в настройках (до «Сохранить профиль») */
   let settingsBadgesDraft = null;
+  let settingsClassesDraft = null;
 
   /**
    * Нормализация бейджей в единый формат
@@ -49,6 +50,48 @@ const AccountPage = (() => {
       " title="${(b.visible ? 'Нажмите, чтобы скрыть' : 'Нажмите, чтобы показать')} (сохраните профиль)">
         <span>${b.icon || '🏷️'}</span>
         <span>${Card.escapeHtml(b.name || b.code || 'Badge')}</span>
+      </button>
+    `).join('');
+  }
+
+  function cloneClassesForDraft(skillClasses) {
+    return (skillClasses || []).map(c => ({
+      skillId: c.skillId,
+      icon: c.icon || '📌',
+      skillName: c.skillName || 'Навык',
+      rank: c.rank || 'F',
+      baseRank: c.baseRank || 'F',
+      title: c.title || '',
+      visible: c.visible !== false
+    }));
+  }
+
+  function renderClassesListHtml(items) {
+    const rankColor = {
+      D: 'var(--rank-d)',
+      C: 'var(--rank-c)',
+      B: 'var(--rank-b)',
+      A: 'var(--rank-a)',
+      S: 'var(--rank-s-gold)'
+    };
+    return items.map((item, idx) => `
+      <button type="button" onclick="SettingsPage.toggleClassVisibility(${idx})" style="
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 10px;
+        border-radius: 999px;
+        border: 2px solid ${item.visible ? (rankColor[item.baseRank] || 'rgba(255,255,255,0.16)') : 'rgba(255,255,255,0.16)'};
+        background: ${item.visible ? ((rankColor[item.baseRank] || '#888') + '22') : 'rgba(100,100,100,0.08)'};
+        color: ${item.visible ? (rankColor[item.baseRank] || 'var(--text-primary)') : '#666666'};
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        opacity: ${item.visible ? '1' : '0.5'};
+      " title="${(item.visible ? 'Нажмите, чтобы скрыть' : 'Нажмите, чтобы показать')} (сохраните профиль)">
+        <span>${item.icon}</span>
+        <span>${Card.escapeHtml(item.skillName)} ${Card.escapeHtml(item.title)} ранга ${Card.escapeHtml(item.rank)}</span>
       </button>
     `).join('');
   }
@@ -124,7 +167,12 @@ const AccountPage = (() => {
 
   function renderSettingsPage(data) {
     const user = data.user || {};
-    const skillClasses = Card.extractSkillClasses(data.categories || []);
+    const allClasses = Card.extractSkillClasses(data.categories || [], { limit: null, includeHidden: true });
+    settingsClassesDraft = cloneClassesForDraft(allClasses.map(c => ({
+      ...c,
+      visible: c.classVisible !== false
+    })));
+    const skillClasses = settingsClassesDraft;
     // В API для владельца: badges — только видимые на карточке, badgesAll — полный список для настроек
     const rawBadges = Array.isArray(user.badgesAll)
       ? user.badgesAll
@@ -223,7 +271,14 @@ const AccountPage = (() => {
                 Пока нет классов.
               </div>
             `
-            : Card.renderSkillClassesFromList(skillClasses)
+            : `
+              <div style="display: flex; flex-wrap: wrap; gap: 8px;" id="classes-list">
+                ${renderClassesListHtml(skillClasses)}
+              </div>
+              <div style="margin-top:8px;font-size:12px;color:var(--text-muted);">
+                На карточке показываются только активные классы, максимум 3.
+              </div>
+            `
           }
         </div>
 
@@ -304,6 +359,7 @@ const AccountPage = (() => {
       }
 
       const badges = settingsBadgesDraft || [];
+      const classes = settingsClassesDraft || [];
       const fullBadges = badges.map(b => ({
         code: b.code || (typeof b === 'string' ? b : ''),
         name: b.name || '',
@@ -317,7 +373,11 @@ const AccountPage = (() => {
         lastName,
         profileText,
         showProfileText,
-        badges: fullBadges
+        badges: fullBadges,
+        classes: classes.map(c => ({
+          skillId: c.skillId,
+          visible: c.visible !== false
+        }))
       });
       API.clearCache();
       await App.refreshProfile();
@@ -371,6 +431,33 @@ const AccountPage = (() => {
     const badgesList = document.getElementById('badges-list');
     if (badgesList) {
       badgesList.innerHTML = renderBadgesListHtml(badges);
+    }
+
+    if (App.tg?.HapticFeedback) {
+      App.tg.HapticFeedback.impactOccurred('light');
+    }
+  }
+
+  function toggleClassVisibility(classIndex) {
+    const classes = settingsClassesDraft;
+    if (!classes || !classes[classIndex]) return;
+
+    if (!classes[classIndex].visible) {
+      const activeCount = classes.filter(c => c.visible !== false).length;
+      if (activeCount >= 3) {
+        App.showToast('Можно включить максимум 3 класса', '⚠️');
+        if (App.tg?.HapticFeedback) {
+          App.tg.HapticFeedback.notificationOccurred('warning');
+        }
+        return;
+      }
+    }
+
+    classes[classIndex].visible = !classes[classIndex].visible;
+
+    const classesList = document.getElementById('classes-list');
+    if (classesList) {
+      classesList.innerHTML = renderClassesListHtml(classes);
     }
 
     if (App.tg?.HapticFeedback) {
@@ -533,6 +620,7 @@ const AccountPage = (() => {
     updateCharCount,
     toggleProfileTextVisibility,
     toggleBadgeVisibility,
+    toggleClassVisibility,
     toggleFollow,
     showFollowers,
     showFollowing,
@@ -548,6 +636,7 @@ const SettingsPage = {
   updateCharCount: (...args) => AccountPage.updateCharCount(...args),
   toggleProfileTextVisibility: (...args) => AccountPage.toggleProfileTextVisibility(...args),
   toggleBadgeVisibility: (...args) => AccountPage.toggleBadgeVisibility(...args),
+  toggleClassVisibility: (...args) => AccountPage.toggleClassVisibility(...args),
   confirmResetProfile: (...args) => AccountPage.confirmResetProfile(...args)
 };
 

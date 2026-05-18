@@ -532,8 +532,8 @@ router.post('/add', (req, res) => {
     }
 
     db.prepare(`
-      INSERT INTO user_skills (user_id, skill_id, initial_days)
-      VALUES (?, ?, ?)
+      INSERT INTO user_skills (user_id, skill_id, initial_days, class_visible)
+      VALUES (?, ?, ?, 0)
     `).run(userId, skillId, initialDays);
 
     // Пересчитываем ранг (для нового скилла будет F, но всё равно создаём корректную запись)

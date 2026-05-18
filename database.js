@@ -72,6 +72,7 @@ db.exec(`
     user_id INTEGER NOT NULL,
     skill_id INTEGER NOT NULL,
     initial_days INTEGER NOT NULL DEFAULT 0,
+    class_visible INTEGER NOT NULL DEFAULT 0,
     rank TEXT DEFAULT 'F',
     current_streak INTEGER DEFAULT 0,
     best_streak INTEGER DEFAULT 0,
@@ -240,6 +241,13 @@ function rebuildUserSkillsWithoutLegacyYears() {
   if (colsAfter.includes('active_years') || colsAfter.includes('years_known') || colsAfter.includes('years_practiced')) {
     rebuildUserSkillsWithoutLegacyYears();
   }
+
+  const finalCols = getTableColumns('user_skills');
+  if (!finalCols.includes('class_visible')) {
+    db.exec('ALTER TABLE user_skills ADD COLUMN class_visible INTEGER NOT NULL DEFAULT 0;');
+    // По ТЗ: классы не показываются, пока пользователь сам не включит их в настройках
+    db.exec('UPDATE user_skills SET class_visible = 0;');
+  }
 }
 
 // Мета-приложения (одноразовые миграции)
@@ -249,6 +257,15 @@ db.exec(`
     value TEXT NOT NULL
   );
 `);
+
+// Одноразовый перевод на новый UX: классы скрыты до ручного включения в настройках
+const classesDefaultMigrated = db.prepare(
+  'SELECT value FROM app_meta WHERE key = ?'
+).get('classes_default_hidden_v1');
+if (!classesDefaultMigrated) {
+  db.exec('UPDATE user_skills SET class_visible = 0;');
+  db.prepare('INSERT INTO app_meta (key, value) VALUES (?, ?)').run('classes_default_hidden_v1', '1');
+}
 
 // Бейджи пользователей (многие-ко-многим, без дублей по паре user + badge)
 db.exec(`

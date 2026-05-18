@@ -416,7 +416,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: -2px 0 10px;
+  margin: 0 0 10px;
 }
 
 .card-class-item {
@@ -460,7 +460,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: -6px 0 12px;
+  margin: 0 0 12px;
 }
 
 .card-badge-item {
