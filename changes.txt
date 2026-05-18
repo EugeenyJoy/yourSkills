@@ -1,0 +1,569 @@
+diff --git a/public/css/style.css b/public/css/style.css
+index 05c0e66..50e81ed 100644
+--- a/public/css/style.css
++++ b/public/css/style.css
+@@ -321,6 +321,10 @@ body {
+   cursor: pointer;
+ }
+ 
++.profile-card.is-expanded .card-expand-toggle {
++  display: none;
++}
++
+ .card-corner {
+   display: none;
+ }
+@@ -552,6 +556,7 @@ body {
+   min-height: 620px;
+   background:
+     radial-gradient(circle at 20% 20%, rgba(255,255,255,0.06), transparent 40%),
++    repeating-conic-gradient(from 0deg at 50% 50%, transparent 0deg 60deg, rgba(212, 175, 55, 0.04) 60deg 120deg),
+     var(--bg-card);
+ }
+ 
+@@ -560,6 +565,7 @@ body {
+   position: absolute;
+   inset: 0;
+   background-image:
++    repeating-conic-gradient(from 0deg at 50% 50%, transparent 0deg 60deg, rgba(212, 175, 55, 0.04) 60deg 120deg),
+     radial-gradient(circle at center 28%, rgba(255,255,255,0.10), transparent 56%);
+   background-size: 100% 100%;
+   background-position: center;
+@@ -584,17 +590,20 @@ body {
+ 
+ .profile-card.is-expanded .profile-card-expanded-ui {
+   display: block;
++  padding: 16px;
+ }
+ 
+ .profile-card.is-expanded .card-corner {
+   display: block;
+   position: absolute;
+-  color: rgba(255,255,255,0.6);
++  color: #D4AF37;
++  opacity: 0.6;
+   z-index: 3;
+   font-size: 12px;
++  text-shadow: 0 0 8px rgba(212, 175, 55, 0.4);
+ }
+ .profile-card.is-expanded .card-corner.c1 { top: 10px; left: 10px; }
+-.profile-card.is-expanded .card-corner.c2 { top: 10px; right: 46px; }
++.profile-card.is-expanded .card-corner.c2 { top: 10px; right: 10px; }
+ .profile-card.is-expanded .card-corner.c3 { bottom: 10px; left: 10px; }
+ .profile-card.is-expanded .card-corner.c4 { bottom: 10px; right: 10px; }
+ 
+@@ -605,53 +614,135 @@ body {
+ 
+ .profile-card.is-expanded .expanded-top-row {
+   display: flex;
+-  justify-content: space-between;
++  justify-content: flex-start;
+   align-items: flex-start;
++  margin-bottom: 16px;
+ }
+ 
+ .profile-card.is-expanded .expanded-role-pills {
+   display: flex;
+-  flex-direction: column;
+-  gap: 6px;
++  flex-direction: row;
++  gap: 8px;
++  flex-wrap: wrap;
+ }
+ 
+ .profile-card.is-expanded .expanded-role-pill {
+   display: inline-flex;
+   align-items: center;
+   gap: 4px;
+-  padding: 3px 8px;
++  padding: 6px 10px;
+   border-radius: 999px;
+-  font-size: 11px;
++  font-size: 12px;
++  font-weight: 600;
+   border: 1px solid rgba(255,255,255,0.2);
+   background: rgba(255,255,255,0.08);
+ }
+ 
+-.profile-card.is-expanded .expanded-top-right .card-rank-badge {
+-  width: 34px;
+-  height: 34px;
+-  font-size: 16px;
++/* ===== HERO CARD: Прямоугольный блок-сцена ===== */
++.profile-card.is-expanded .expanded-hero-card {
++  position: relative;
++  width: 200px;
++  height: 260px;
++  margin: 0 auto 16px;
++  border-radius: 16px;
++  overflow: hidden;
++  box-sizing: border-box;
+ }
+ 
+-.profile-card.is-expanded .expanded-hero-wrap {
+-  position: relative;
+-  width: 190px;
+-  height: 190px;
+-  margin: 8px auto 6px;
++/* Внешняя рамка (по цвету ранга) + внутренняя золотая с зазором */
++.profile-card.is-expanded.rank-e .expanded-hero-card {
++  border: 1px solid var(--rank-e);
++  box-shadow: 0 0 0 3px var(--bg-card), 0 0 0 5px #D4AF37;
++}
++
++.profile-card.is-expanded.rank-d .expanded-hero-card {
++  border: 1px solid var(--rank-d);
++  box-shadow: 0 0 0 3px var(--bg-card), 0 0 0 5px #D4AF37;
++}
++
++.profile-card.is-expanded.rank-c .expanded-hero-card {
++  border: 1px solid var(--rank-c);
++  box-shadow: 0 0 0 3px var(--bg-card), 0 0 0 5px #D4AF37;
++}
++
++.profile-card.is-expanded.rank-b .expanded-hero-card {
++  border: 1px solid var(--rank-b);
++  box-shadow: 0 0 0 3px var(--bg-card), 0 0 0 5px #D4AF37;
++}
++
++.profile-card.is-expanded.rank-a .expanded-hero-card {
++  border: 1px solid var(--rank-a);
++  box-shadow: 0 0 0 3px var(--bg-card), 0 0 0 5px #D4AF37;
+ }
+ 
+-.profile-card.is-expanded .expanded-hero-aura {
++.profile-card.is-expanded.rank-s .expanded-hero-card {
++  border: 1px solid var(--rank-s-gold);
++  box-shadow: 0 0 0 3px var(--bg-card), 0 0 0 5px #D4AF37, 0 0 16px rgba(251, 191, 36, 0.3);
++}
++
++/* Фон-сцена с радиальным градиентом и паттерном */
++.profile-card.is-expanded .expanded-hero-bg {
+   position: absolute;
+-  inset: 12px;
+-  border-radius: 999px;
+-  background: var(--rank-D);
+-  filter: blur(16px);
+-  opacity: 0.45;
++  inset: 0;
++  background-image:
++    repeating-conic-gradient(from 0deg at 50% 50%, transparent 0deg 60deg, rgba(212, 175, 55, 0.08) 60deg 120deg);
++  background-size: 60px 60px;
++}
++
++.profile-card.is-expanded.rank-e .expanded-hero-bg {
++  background-image:
++    radial-gradient(circle at 50% 50%, var(--rank-e), var(--rank-e) 0%, transparent 100%),
++    repeating-conic-gradient(from 0deg at 50% 50%, transparent 0deg 60deg, rgba(212, 175, 55, 0.08) 60deg 120deg);
++  opacity: 0.7;
++}
++
++.profile-card.is-expanded.rank-d .expanded-hero-bg {
++  background-image:
++    radial-gradient(circle at 50% 50%, var(--rank-d), var(--rank-d) 0%, transparent 100%),
++    repeating-conic-gradient(from 0deg at 50% 50%, transparent 0deg 60deg, rgba(212, 175, 55, 0.08) 60deg 120deg);
++  opacity: 0.7;
++}
++
++.profile-card.is-expanded.rank-c .expanded-hero-bg {
++  background-image:
++    radial-gradient(circle at 50% 50%, var(--rank-c), var(--rank-c) 0%, transparent 100%),
++    repeating-conic-gradient(from 0deg at 50% 50%, transparent 0deg 60deg, rgba(212, 175, 55, 0.08) 60deg 120deg);
++  opacity: 0.7;
+ }
+ 
+-.profile-card.is-expanded.accent-s .expanded-hero-aura { background: var(--rank-S); opacity: 0.58; }
+-.profile-card.is-expanded.accent-a .expanded-hero-aura { background: var(--rank-A); opacity: 0.56; }
+-.profile-card.is-expanded.accent-b .expanded-hero-aura { background: var(--rank-B); opacity: 0.54; }
+-.profile-card.is-expanded.accent-c .expanded-hero-aura { background: var(--rank-C); opacity: 0.52; }
++.profile-card.is-expanded.rank-b .expanded-hero-bg {
++  background-image:
++    radial-gradient(circle at 50% 50%, var(--rank-b), var(--rank-b) 0%, transparent 100%),
++    repeating-conic-gradient(from 0deg at 50% 50%, transparent 0deg 60deg, rgba(212, 175, 55, 0.08) 60deg 120deg);
++  opacity: 0.7;
++}
++
++.profile-card.is-expanded.rank-a .expanded-hero-bg {
++  background-image:
++    radial-gradient(circle at 50% 50%, var(--rank-a), var(--rank-a) 0%, transparent 100%),
++    repeating-conic-gradient(from 0deg at 50% 50%, transparent 0deg 60deg, rgba(212, 175, 55, 0.08) 60deg 120deg);
++  opacity: 0.7;
++}
++
++.profile-card.is-expanded.rank-s .expanded-hero-bg {
++  background-image:
++    radial-gradient(circle at 50% 50%, var(--rank-s), var(--rank-s-gold), transparent 100%),
++    repeating-conic-gradient(from 0deg at 50% 50%, transparent 0deg 60deg, rgba(212, 175, 55, 0.08) 60deg 120deg);
++  opacity: 0.8;
++}
++
++/* Аватар круглый в верхней части */
++.profile-card.is-expanded .expanded-hero-avatar-wrap {
++  position: absolute;
++  top: 20px;
++  left: 50%;
++  transform: translateX(-50%);
++  width: 140px;
++  height: 140px;
++  border-radius: 50%;
++  overflow: hidden;
++  z-index: 2;
++}
+ 
+ .profile-card.is-expanded .expanded-hero-avatar {
+   position: absolute;
+@@ -659,36 +750,82 @@ body {
+   width: 100%;
+   height: 100%;
+   object-fit: cover;
+-  border-radius: 999px;
+-  border: 3px solid rgba(255,255,255,0.82);
+-  box-shadow: 0 10px 24px rgba(0,0,0,0.36), inset 0 0 0 4px rgba(255,255,255,0.22);
+-  animation: avatar-float 4s ease-in-out infinite;
++  border-radius: 50%;
++}
++
++/* Тёмная плашка внизу с именем и рангом */
++.profile-card.is-expanded .expanded-hero-nameplate {
++  position: absolute;
++  bottom: 0;
++  left: 0;
++  right: 0;
++  background: rgba(0, 0, 0, 0.5);
++  padding: 12px 8px;
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  gap: 4px;
++  z-index: 2;
+ }
+ 
+-@keyframes avatar-float {
+-  0%, 100% { transform: translateY(0); }
+-  50% { transform: translateY(-3px); }
++.profile-card.is-expanded .expanded-hero-name {
++  font-family: 'Unbounded', sans-serif;
++  font-size: 22px;
++  font-weight: 700;
++  letter-spacing: 0.02em;
++  color: #fff;
++  text-shadow: 0 0 16px var(--rank-glow);
++  text-align: center;
++  line-height: 1.2;
+ }
+ 
+-.profile-card.is-expanded .expanded-nameplate {
++.profile-card.is-expanded .expanded-hero-rank {
+   display: flex;
+   align-items: center;
+-  justify-content: center;
+-  gap: 10px;
+-  margin: 0 0 4px;
++  gap: 6px;
++  font-family: 'Rajdhani', sans-serif;
+ }
+ 
+-.profile-card.is-expanded .expanded-nameplate .line {
+-  width: 52px;
+-  height: 1px;
+-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.7), transparent);
++.profile-card.is-expanded .rank-letter {
++  font-size: 16px;
++  font-weight: 700;
++  padding: 2px 6px;
++  border-radius: 4px;
++  color: #fff;
+ }
+ 
+-.profile-card.is-expanded .expanded-nameplate .name {
+-  font-size: 26px;
+-  font-weight: 800;
+-  color: #fff;
+-  text-shadow: 0 0 12px rgba(255,255,255,0.18);
++.profile-card.is-expanded .rank-letter.rank-e { background: var(--rank-e); }
++.profile-card.is-expanded .rank-letter.rank-d { background: var(--rank-d); }
++.profile-card.is-expanded .rank-letter.rank-c { background: var(--rank-c); }
++.profile-card.is-expanded .rank-letter.rank-b { background: var(--rank-b); }
++.profile-card.is-expanded .rank-letter.rank-a { background: var(--rank-a); }
++.profile-card.is-expanded .rank-letter.rank-s {
++  background: linear-gradient(135deg, var(--rank-s), var(--rank-s-gold));
++}
++
++.profile-card.is-expanded .rank-stars {
++  font-size: 13px;
++  color: #D4AF37;
++  letter-spacing: 1px;
++}
++
++/* Handle-полоска внизу для свернуть/развернуть */
++.profile-card.is-expanded .expanded-hero-handle {
++  position: absolute;
++  bottom: 8px;
++  left: 50%;
++  transform: translateX(-50%);
++  width: 40px;
++  height: 4px;
++  background: rgba(255, 255, 255, 0.3);
++  border-radius: 2px;
++  cursor: pointer;
++  transition: opacity 0.2s ease;
++  z-index: 3;
++}
++
++.profile-card.is-expanded .expanded-hero-handle:hover {
++  opacity: 0.6;
+ }
+ 
+ .profile-card.is-expanded .expanded-profile-text {
+@@ -706,19 +843,55 @@ body {
+   display: flex;
+   justify-content: space-between;
+   font-size: 12px;
++  font-family: 'Rajdhani', sans-serif;
++  font-weight: 500;
+   color: rgba(255,255,255,0.84);
+-  margin-bottom: 4px;
++  margin-bottom: 6px;
+ }
+ 
+ .profile-card.is-expanded .expanded-progress-line {
+-  height: 4px;
++  height: 6px;
+   border-radius: 999px;
+   background: rgba(255,255,255,0.16);
+   overflow: hidden;
++  box-shadow: inset 0 0 4px rgba(0,0,0,0.5);
+ }
+ 
+ .profile-card.is-expanded .expanded-progress-line .fill {
+   height: 100%;
++  border-radius: 999px;
++  transition: width 0.3s ease;
++  box-shadow: 0 0 8px currentColor;
++}
++
++.profile-card.is-expanded .expanded-progress-line .fill.rank-e {
++  background: linear-gradient(90deg, var(--rank-e), rgba(52, 211, 153, 0.8));
++  box-shadow: 0 0 8px var(--rank-e);
++}
++
++.profile-card.is-expanded .expanded-progress-line .fill.rank-d {
++  background: linear-gradient(90deg, var(--rank-d), rgba(52, 211, 153, 0.8));
++  box-shadow: 0 0 8px var(--rank-d);
++}
++
++.profile-card.is-expanded .expanded-progress-line .fill.rank-c {
++  background: linear-gradient(90deg, var(--rank-c), rgba(96, 165, 250, 0.8));
++  box-shadow: 0 0 8px var(--rank-c);
++}
++
++.profile-card.is-expanded .expanded-progress-line .fill.rank-b {
++  background: linear-gradient(90deg, var(--rank-b), rgba(167, 139, 250, 0.8));
++  box-shadow: 0 0 8px var(--rank-b);
++}
++
++.profile-card.is-expanded .expanded-progress-line .fill.rank-a {
++  background: linear-gradient(90deg, var(--rank-a), rgba(251, 146, 60, 0.8));
++  box-shadow: 0 0 8px var(--rank-a);
++}
++
++.profile-card.is-expanded .expanded-progress-line .fill.rank-s {
++  background: linear-gradient(90deg, var(--rank-s), var(--rank-s-gold));
++  box-shadow: 0 0 8px var(--rank-s-gold);
+ }
+ 
+ .profile-card.is-expanded .expanded-skill-grid {
+@@ -730,41 +903,70 @@ body {
+ }
+ 
+ .profile-card.is-expanded .expanded-skill-card {
+-  width: 90px;
+-  min-height: 110px;
+-  border-radius: 10px;
++  width: 100px;
++  height: 100px;
++  border-radius: 8px;
+   border: 1px solid rgba(255,255,255,0.24);
+-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16), 0 0 12px rgba(255,255,255,0.08);
+-  padding: 8px 6px;
++  padding: 8px;
+   text-align: center;
+   background: rgba(12, 16, 30, 0.58);
+-  transition: transform .2s ease, box-shadow .2s ease;
++  transition: transform .2s ease, filter .2s ease;
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  justify-content: center;
++  cursor: pointer;
++  position: relative;
++  clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+ }
+ 
+ .profile-card.is-expanded .expanded-skill-card:hover {
+   transform: scale(1.05);
+ }
+ 
+-.profile-card.is-expanded .expanded-skill-card .icon { font-size: 28px; margin-bottom: 6px; }
++.profile-card.is-expanded .expanded-skill-card .icon { 
++  font-size: 32px; 
++  margin-bottom: 4px; 
++}
++
+ .profile-card.is-expanded .expanded-skill-card .name {
+   font-size: 12px;
+-  min-height: 30px;
++  font-family: 'Rajdhani', sans-serif;
++  font-weight: 600;
++  min-height: 24px;
+   display: -webkit-box;
+   -webkit-line-clamp: 2;
+   -webkit-box-orient: vertical;
+   overflow: hidden;
++  line-height: 1.1;
+ }
++
+ .profile-card.is-expanded .expanded-skill-card .stars {
+-  margin-top: 6px;
++  margin-top: 4px;
+   font-size: 11px;
+-  letter-spacing: 0.4px;
++  letter-spacing: 1px;
++  color: #D4AF37;
++}
++
++.profile-card.is-expanded .expanded-skill-card.rank-s { 
++  filter: drop-shadow(0 0 16px var(--rank-S-glow));
++}
++
++.profile-card.is-expanded .expanded-skill-card.rank-a { 
++  filter: drop-shadow(0 0 16px var(--rank-A-glow));
++}
++
++.profile-card.is-expanded .expanded-skill-card.rank-b { 
++  filter: drop-shadow(0 0 16px var(--rank-B-glow));
+ }
+ 
+-.profile-card.is-expanded .expanded-skill-card.rank-s { box-shadow: 0 0 12px var(--rank-S-glow), inset 0 0 0 1px rgba(255,255,255,.2); border-color: rgba(255,215,0,.7); }
+-.profile-card.is-expanded .expanded-skill-card.rank-a { box-shadow: 0 0 12px var(--rank-A-glow), inset 0 0 0 1px rgba(255,255,255,.2); border-color: rgba(168,85,247,.7); }
+-.profile-card.is-expanded .expanded-skill-card.rank-b { box-shadow: 0 0 12px var(--rank-B-glow), inset 0 0 0 1px rgba(255,255,255,.2); border-color: rgba(59,130,246,.7); }
+-.profile-card.is-expanded .expanded-skill-card.rank-c { box-shadow: 0 0 12px var(--rank-C-glow), inset 0 0 0 1px rgba(255,255,255,.2); border-color: rgba(34,197,94,.7); }
+-.profile-card.is-expanded .expanded-skill-card.rank-d { box-shadow: 0 0 12px var(--rank-D-glow), inset 0 0 0 1px rgba(255,255,255,.2); border-color: rgba(100,116,139,.7); }
++.profile-card.is-expanded .expanded-skill-card.rank-c { 
++  filter: drop-shadow(0 0 16px var(--rank-C-glow));
++}
++
++.profile-card.is-expanded .expanded-skill-card.rank-d { 
++  filter: drop-shadow(0 0 16px var(--rank-D-glow));
++}
+ 
+ .profile-card.is-expanded .expanded-stats-line {
+   display: flex;
+@@ -772,10 +974,18 @@ body {
+   align-items: center;
+   gap: 10px;
+   font-size: 13px;
++  font-family: 'Rajdhani', sans-serif;
++  font-weight: 600;
+   color: rgba(255,255,255,0.9);
+   margin: 8px 0 10px;
+ }
+ 
++.profile-card.is-expanded .expanded-stats-line span {
++  display: flex;
++  align-items: center;
++  gap: 4px;
++}
++
+ .profile-card.is-expanded .expanded-stats-line i {
+   width: 1px;
+   height: 12px;
+diff --git a/public/index.html b/public/index.html
+index 5ffe2b7..332ce65 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -12,6 +12,9 @@
+   <!-- Стили -->
+   <link rel="stylesheet" href="/css/style.css">
+ 
++  <!-- Google Fonts: Unbounded & Rajdhani -->
++  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
++
+   <!-- Telegram Web App SDK -->
+   <!-- Это даёт доступ к window.Telegram.WebApp -->
+   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+diff --git a/public/js/components/card.js b/public/js/components/card.js
+index d4c2788..c79e3e4 100644
+--- a/public/js/components/card.js
++++ b/public/js/components/card.js
+@@ -40,10 +40,10 @@ const Card = (() => {
+         <button class="card-expand-toggle" onclick="Card.toggleCardExpanded('${String(user.id || 'me').replace(/[^a-zA-Z0-9_-]/g, '')}')" title="Развернуть карточку">
+           ⤢
+         </button>
+-        <span class="card-corner c1">✦</span>
+-        <span class="card-corner c2">✦</span>
+-        <span class="card-corner c3">✦</span>
+-        <span class="card-corner c4">✦</span>
++        <span class="card-corner c1">⬢</span>
++        <span class="card-corner c2">⬢</span>
++        <span class="card-corner c3">⬢</span>
++        <span class="card-corner c4">⬢</span>
+         <div class="profile-card-bg"></div>
+         <div class="profile-card-content">
+         <div class="profile-card-standard">
+@@ -106,22 +106,25 @@ const Card = (() => {
+         <div class="profile-card-expanded-ui">
+           <div class="expanded-top-row">
+             <div class="expanded-role-pills">${renderExpandedRolePills(user.badges)}</div>
+-            <div class="expanded-top-right">
+-              <div class="card-rank-badge rank-${rank}">${user.overallRank || 'E'}</div>
+-            </div>
+           </div>
+ 
+-          <div class="expanded-hero-wrap">
+-            <div class="expanded-hero-aura"></div>
+-            <img class="expanded-hero-avatar" src="${escapeHtml(avatarUrl)}" alt="Аватар"
+-              onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}'">
++          <!-- Hero Card: прямоугольный блок-сцена -->
++          <div class="expanded-hero-card">
++            <div class="expanded-hero-bg"></div>
++            <div class="expanded-hero-avatar-wrap">
++              <img class="expanded-hero-avatar" src="${escapeHtml(avatarUrl)}" alt="Аватар"
++                onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}'">
++            </div>
++            <div class="expanded-hero-nameplate">
++              <div class="expanded-hero-name">${escapeHtml(user.firstName)} ${escapeHtml(user.lastName || '')}</div>
++              <div class="expanded-hero-rank">
++                <span class="rank-letter rank-${rank}">${user.overallRank || 'E'}</span>
++                <span class="rank-stars">${rankStars(user.overallRank || 'E')}</span>
++              </div>
++            </div>
++            <div class="expanded-hero-handle" onclick="Card.toggleCardExpanded('${String(user.id || 'me').replace(/[^a-zA-Z0-9_-]/g, '')}')"></div>
+           </div>
+ 
+-          <div class="expanded-nameplate">
+-            <span class="line"></span>
+-            <span class="name">${escapeHtml(user.firstName)} ${escapeHtml(user.lastName || '')}</span>
+-            <span class="line"></span>
+-          </div>
+           ${user.showProfileText && user.profileText
+             ? `<div class="expanded-profile-text">${escapeHtml(user.profileText)}</div>`
+             : ''
+@@ -310,7 +313,7 @@ const Card = (() => {
+   function renderExpandedStats(stats, social) {
+     return `
+       <div class="expanded-stats-line">
+-        <span>⚔ ${App.formatNumber(stats?.totalSkills || 0)}</span>
++        <span>⬢ ${App.formatNumber(stats?.totalSkills || 0)}</span>
+         <i></i>
+         <span>👥 ${App.formatNumber(social?.followers || 0)}</span>
+         <i></i>
+@@ -320,6 +323,8 @@ const Card = (() => {
+       </div>
+     `;
+   }
++    `;
++  }
+ 
+   function renderExpandedActions(user, social) {
+     if (isOwnProfile({ user })) {

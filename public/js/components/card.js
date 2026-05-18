@@ -40,10 +40,10 @@ const Card = (() => {
         <button class="card-expand-toggle" onclick="Card.toggleCardExpanded('${String(user.id || 'me').replace(/[^a-zA-Z0-9_-]/g, '')}')" title="Развернуть карточку">
           ⤢
         </button>
-        <span class="card-corner c1">✦</span>
-        <span class="card-corner c2">✦</span>
-        <span class="card-corner c3">✦</span>
-        <span class="card-corner c4">✦</span>
+        <span class="card-corner c1">⬢</span>
+        <span class="card-corner c2">⬢</span>
+        <span class="card-corner c3">⬢</span>
+        <span class="card-corner c4">⬢</span>
         <div class="profile-card-bg"></div>
         <div class="profile-card-content">
         <div class="profile-card-standard">
@@ -106,22 +106,25 @@ const Card = (() => {
         <div class="profile-card-expanded-ui">
           <div class="expanded-top-row">
             <div class="expanded-role-pills">${renderExpandedRolePills(user.badges)}</div>
-            <div class="expanded-top-right">
-              <div class="card-rank-badge rank-${rank}">${user.overallRank || 'E'}</div>
+          </div>
+
+          <!-- Hero Card: прямоугольный блок-сцена -->
+          <div class="expanded-hero-card">
+            <div class="expanded-hero-bg"></div>
+            <div class="expanded-hero-avatar-wrap">
+              <img class="expanded-hero-avatar" src="${escapeHtml(avatarUrl)}" alt="Аватар"
+                onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}'">
             </div>
+            <div class="expanded-hero-nameplate">
+              <div class="expanded-hero-name">${escapeHtml(user.firstName)} ${escapeHtml(user.lastName || '')}</div>
+              <div class="expanded-hero-rank">
+                <span class="rank-letter rank-${rank}">${user.overallRank || 'E'}</span>
+                <span class="rank-stars">${rankStars(user.overallRank || 'E')}</span>
+              </div>
+            </div>
+            <div class="expanded-hero-handle" onclick="Card.toggleCardExpanded('${String(user.id || 'me').replace(/[^a-zA-Z0-9_-]/g, '')}')"></div>
           </div>
 
-          <div class="expanded-hero-wrap">
-            <div class="expanded-hero-aura"></div>
-            <img class="expanded-hero-avatar" src="${escapeHtml(avatarUrl)}" alt="Аватар"
-              onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}'">
-          </div>
-
-          <div class="expanded-nameplate">
-            <span class="line"></span>
-            <span class="name">${escapeHtml(user.firstName)} ${escapeHtml(user.lastName || '')}</span>
-            <span class="line"></span>
-          </div>
           ${user.showProfileText && user.profileText
             ? `<div class="expanded-profile-text">${escapeHtml(user.profileText)}</div>`
             : ''
@@ -310,7 +313,7 @@ const Card = (() => {
   function renderExpandedStats(stats, social) {
     return `
       <div class="expanded-stats-line">
-        <span>⚔ ${App.formatNumber(stats?.totalSkills || 0)}</span>
+        <span>⬢ ${App.formatNumber(stats?.totalSkills || 0)}</span>
         <i></i>
         <span>👥 ${App.formatNumber(social?.followers || 0)}</span>
         <i></i>
