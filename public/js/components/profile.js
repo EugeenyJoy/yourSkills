@@ -124,6 +124,7 @@ const AccountPage = (() => {
 
   function renderSettingsPage(data) {
     const user = data.user || {};
+    const skillClasses = Card.extractSkillClasses(data.categories || []);
     // В API для владельца: badges — только видимые на карточке, badgesAll — полный список для настроек
     const rawBadges = Array.isArray(user.badgesAll)
       ? user.badgesAll
@@ -209,6 +210,21 @@ const AccountPage = (() => {
               </div>
             </div>
           </div>
+        </div>
+
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">🎓 Мои классы</span>
+            <span class="section-action">${skillClasses.length}</span>
+          </div>
+          ${skillClasses.length === 0
+            ? `
+              <div style="color: var(--text-secondary); font-size: 14px;">
+                Пока нет классов.
+              </div>
+            `
+            : Card.renderSkillClassesFromList(skillClasses)
+          }
         </div>
 
         <div class="section">

@@ -412,6 +412,50 @@ body {
   color: var(--text-secondary);
 }
 
+.card-classes-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -2px 0 10px;
+}
+
+.card-class-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.card-class-main {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.card-class-meta {
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.card-class-item.rank-d { border-color: rgba(52, 211, 153, 0.45); }
+.card-class-item.rank-c { border-color: rgba(96, 165, 250, 0.45); }
+.card-class-item.rank-b { border-color: rgba(167, 139, 250, 0.45); }
+.card-class-item.rank-a { border-color: rgba(251, 146, 60, 0.45); }
+.card-class-item.rank-s {
+  border-color: rgba(251, 191, 36, 0.45);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(251, 191, 36, 0.14));
+}
+
+.card-class-item.rank-d .card-class-meta { color: var(--rank-d); }
+.card-class-item.rank-c .card-class-meta { color: var(--rank-c); }
+.card-class-item.rank-b .card-class-meta { color: var(--rank-b); }
+.card-class-item.rank-a .card-class-meta { color: var(--rank-a); }
+.card-class-item.rank-s .card-class-meta { color: var(--rank-s-gold); }
+
 .card-badges-row {
   display: flex;
   flex-wrap: wrap;

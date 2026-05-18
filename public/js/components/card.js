@@ -55,6 +55,7 @@ const Card = (() => {
           </div>
         </div>
 
+        ${renderSkillClasses(categories)}
         ${renderUserBadges(user.badges)}
 
          <!-- Прогресс-бар ранга -->
@@ -101,6 +102,51 @@ const Card = (() => {
         : ''
       }
     `;
+  }
+
+  function rankTitleByBase(baseRank) {
+    const map = {
+      D: 'Практик',
+      C: 'Знаток',
+      B: 'Эксперт',
+      A: 'Мастер',
+      S: 'Легенда'
+    };
+    return map[baseRank] || null;
+  }
+
+  function extractSkillClasses(categories = []) {
+    const skills = (categories || []).flatMap(c => c.skills || []);
+    return skills
+      .filter(s => s && s.rank && rankTitleByBase(String(s.rank).replace('+', '')))
+      .map(s => {
+        const baseRank = String(s.rank || 'F').replace('+', '');
+        return {
+          icon: s.categoryIcon || '📌',
+          skillName: s.name || 'Навык',
+          rank: s.rank || baseRank,
+          baseRank,
+          title: s.title || rankTitleByBase(baseRank)
+        };
+      });
+  }
+
+  function renderSkillClassesFromList(skillClasses) {
+    if (!Array.isArray(skillClasses) || skillClasses.length === 0) return '';
+    return `
+      <div class="card-classes-row">
+        ${skillClasses.map(item => `
+          <div class="card-class-item rank-${item.baseRank.toLowerCase()}">
+            <span class="card-class-main">${item.icon} ${escapeHtml(item.skillName)}</span>
+            <span class="card-class-meta">${escapeHtml(item.title)} ранга ${escapeHtml(item.rank)}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function renderSkillClasses(categories = []) {
+    return renderSkillClassesFromList(extractSkillClasses(categories));
   }
 
   function normalizeId(id) {
@@ -609,6 +655,9 @@ const Card = (() => {
     renderRankBar,
     renderSkillItem,
     renderUserItem,
+    extractSkillClasses,
+    renderSkillClasses,
+    renderSkillClassesFromList,
     renderCompactUserBadges,
     renderAchievementsSection,
     escapeHtml,
