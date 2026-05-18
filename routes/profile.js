@@ -91,8 +91,10 @@ function buildProfile(userId, viewerId) {
     SELECT us.*, s.name, s.slug, s.description,
            sc.name as subcategory_name, sc.icon as subcategory_icon,
            c.name as category_name, c.icon as category_icon, c.id as category_id,
-           (SELECT COUNT(DISTINCT date) FROM checkins
-              WHERE user_id = us.user_id AND skill_id = us.skill_id) as days
+           (COALESCE(us.initial_days, 0) + (
+             SELECT COUNT(DISTINCT date) FROM checkins
+             WHERE user_id = us.user_id AND skill_id = us.skill_id
+           )) as days
     FROM user_skills us
     JOIN skills s ON us.skill_id = s.id
     JOIN subcategories sc ON s.subcategory_id = sc.id
