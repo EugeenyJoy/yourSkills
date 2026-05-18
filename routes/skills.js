@@ -57,6 +57,10 @@ function getSkillDays(userId, skillId) {
   `).get(userId, skillId).c;
 }
 
+function getSkillTotalDays(userId, skillId, initialDays = 0) {
+  return Math.max(0, Math.floor(initialDays || 0)) + getSkillDays(userId, skillId);
+}
+
 // Уникальные дни чекинов по всем скиллам пользователя
 function getOverallDays(userId) {
   return db.prepare(`
@@ -154,7 +158,7 @@ function recalcSkill(userId, skillId) {
   ).get(userId, skillId);
   if (!us) return null;
 
-  const days = getSkillDays(userId, skillId);
+  const days = getSkillTotalDays(userId, skillId, us.initial_days || 0);
   const regularWeeks = getSkillRegularWeeks(userId, skillId);
   const endorsements = getEndorsersByRank(userId, skillId);
 
@@ -496,7 +500,7 @@ router.get('/search', (req, res) => {
 router.post('/add', (req, res) => {
   try {
     const userId = req.userId;
-    const { skillId, activeYears } = req.body;
+    const { skillId, initial_days } = req.body;
 
     if (!skillId || !Number.isInteger(skillId)) {
       return res.status(400).json({ error: 'Неверный ID навыка' });
@@ -513,7 +517,7 @@ router.post('/add', (req, res) => {
 
     if (!skill) return res.status(404).json({ error: 'Навык не найден' });
 
-    const aYears = Math.max(0, Math.min(80, parseFloat(activeYears) || 0));
+    const initialDays = Math.max(0, Math.min(20000, Math.floor(Number(initial_days) || 0)));
 
     const exists = db.prepare(
       'SELECT id FROM user_skills WHERE user_id = ? AND skill_id = ?'
@@ -528,9 +532,9 @@ router.post('/add', (req, res) => {
     }
 
     db.prepare(`
-      INSERT INTO user_skills (user_id, skill_id, active_years)
+      INSERT INTO user_skills (user_id, skill_id, initial_days)
       VALUES (?, ?, ?)
-    `).run(userId, skillId, aYears);
+    `).run(userId, skillId, initialDays);
 
     // Пересчитываем ранг (для нового скилла будет F, но всё равно создаём корректную запись)
     const result = recalcSkill(userId, skillId);
@@ -547,7 +551,7 @@ router.post('/add', (req, res) => {
       skillId: skill.id,
       category: skill.category_name,
       categoryIcon: skill.category_icon,
-      activeYears: aYears
+      initialDays
     }));
 
     res.status(201).json({
@@ -557,7 +561,7 @@ router.post('/add', (req, res) => {
         name: skill.name,
         categoryIcon: skill.category_icon,
         subcategoryIcon: skill.subcategory_icon,
-        activeYears: aYears,
+        initialDays,
         ...result
       }
     });
@@ -572,14 +576,14 @@ router.post('/add', (req, res) => {
 // ============================================
 // PUT /api/skills/:skillId
 // ============================================
-// Можно менять только activeYears (декор).
+// Можно менять только initial_days (стартовые дни до первых чекинов).
 // На ранг не влияет, но обновляет запись.
 
 router.put('/:skillId', (req, res) => {
   try {
     const userId = req.userId;
     const skillId = parseInt(req.params.skillId);
-    const { activeYears } = req.body;
+    const { initial_days } = req.body;
 
     if (isNaN(skillId)) return res.status(400).json({ error: 'Неверный ID' });
 
@@ -588,21 +592,21 @@ router.put('/:skillId', (req, res) => {
     ).get(userId, skillId);
     if (!us) return res.status(404).json({ error: 'Навык не найден в профиле' });
 
-    const aYears = activeYears !== undefined
-      ? Math.max(0, Math.min(80, parseFloat(activeYears) || 0))
-      : us.active_years;
+    const initialDays = initial_days !== undefined
+      ? Math.max(0, Math.min(20000, Math.floor(Number(initial_days) || 0)))
+      : (us.initial_days || 0);
 
     db.prepare(`
-      UPDATE user_skills SET active_years = ?
+      UPDATE user_skills SET initial_days = ?
       WHERE user_id = ? AND skill_id = ?
-    `).run(aYears, userId, skillId);
+    `).run(initialDays, userId, skillId);
 
     // На ранг не влияет, но возвращаем актуальное состояние
     const result = recalcSkill(userId, skillId);
 
     res.json({
       message: 'Навык обновлён',
-      skill: { ...result, activeYears: aYears }
+      skill: { ...result, initialDays }
     });
 
   } catch (error) {
@@ -673,7 +677,7 @@ router.get('/:skillId/details', (req, res) => {
       WHERE s.id = ?
     `).get(skillId);
 
-    const days = getSkillDays(userId, skillId);
+    const days = getSkillTotalDays(userId, skillId, us.initial_days || 0);
     const regularWeeks = getSkillRegularWeeks(userId, skillId);
     const endorsements = getEndorsersByRank(userId, skillId);
     const endorseCount = db.prepare(
@@ -705,7 +709,7 @@ router.get('/:skillId/details', (req, res) => {
       endorsementCount: endorseCount,
       endorsersByRank: endorsements, // { fromA, fromS }
 
-      activeYears: us.active_years || 0,
+      initialDays: us.initial_days || 0,
       streak,
       bestStreak: us.best_streak || 0
     });

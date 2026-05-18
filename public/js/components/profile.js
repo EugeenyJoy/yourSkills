@@ -603,8 +603,8 @@ const SkillDetailPage = (() => {
               </div>
               <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px;">
                 ${Card.escapeHtml(details.category)}
-                ${details.activeYears > 0
-                  ? ` · ${details.activeYears} ${Card.pluralYears(details.activeYears)} опыта`
+                ${details.initialDays > 0
+                  ? ` · старт ${details.initialDays} дн.`
                   : ''
                 }
               </div>
@@ -927,10 +927,71 @@ const SkillDetailPage = (() => {
   }
 
 
+  function computeInitialDaysFromForm() {
+    const mode = document.getElementById('days-mode')?.value || 'frequency';
+    const periodUnit = document.getElementById('days-period-unit')?.value || 'years';
+    const periodValue = parseInt(document.getElementById('days-period-value')?.value || '1', 10);
+
+    if (mode === 'days') {
+      return SkillDays.clampInitialDays(document.getElementById('days-direct-input')?.value || 0);
+    }
+
+    if (mode === 'schedule') {
+      const schedule = document.getElementById('days-schedule')?.value || 'five_two';
+      let work = 0;
+      let rest = 0;
+
+      if (schedule === 'custom') {
+        work = parseInt(document.getElementById('days-custom-work')?.value || '0', 10);
+        rest = parseInt(document.getElementById('days-custom-rest')?.value || '0', 10);
+      } else {
+        const preset = SkillDays.SCHEDULE_PRESETS[schedule] || { work: 0, rest: 0 };
+        work = preset.work;
+        rest = preset.rest;
+      }
+
+      return SkillDays.clampInitialDays(SkillDays.calcDaysBySchedule({
+        periodUnit,
+        periodValue,
+        work,
+        rest
+      }));
+    }
+
+    const freqPreset = document.getElementById('days-frequency')?.value || 'several_week';
+    const sessionsPerWeek = SkillDays.FREQUENCY_PRESETS[freqPreset] || 0;
+    return SkillDays.clampInitialDays(SkillDays.calcDaysByFrequency({
+      periodUnit,
+      periodValue,
+      sessionsPerWeek
+    }));
+  }
+
+  function updateDaysUi() {
+    const mode = document.getElementById('days-mode')?.value || 'frequency';
+    const scheduleWrap = document.getElementById('days-schedule-wrap');
+    const frequencyWrap = document.getElementById('days-frequency-wrap');
+    const directWrap = document.getElementById('days-direct-wrap');
+    const customWrap = document.getElementById('days-custom-wrap');
+    const schedule = document.getElementById('days-schedule')?.value || 'five_two';
+
+    if (scheduleWrap) scheduleWrap.style.display = mode === 'schedule' ? '' : 'none';
+    if (frequencyWrap) frequencyWrap.style.display = mode === 'frequency' ? '' : 'none';
+    if (directWrap) directWrap.style.display = mode === 'days' ? '' : 'none';
+    if (customWrap) customWrap.style.display = (mode === 'schedule' && schedule === 'custom') ? '' : 'none';
+
+    const initialDays = computeInitialDaysFromForm();
+    const rank = SkillDays.getRankByDaysPreview(initialDays);
+    const preview = document.getElementById('days-preview');
+    if (preview) {
+      preview.textContent = `≈ ${initialDays} дней практики · Стартовый ранг: ${rank}`;
+    }
+  }
+
   /**
-   * Запрос стажа перед добавлением навыка
+   * Запрос стартовых дней перед добавлением навыка
    */
-    function promptAddSkill(skillId, skillName) {
+  function promptAddSkill(skillId, skillName) {
     const html = `
       <div style="padding: 8px 0;">
         <div style="margin-bottom: 20px; text-align: center;">
@@ -939,69 +1000,59 @@ const SkillDetailPage = (() => {
           </div>
         </div>
 
-        <!-- Общий стаж -->
-        <div style="margin-bottom: 16px;">
-          <label style="font-size: 13px; color: var(--text-secondary); display: block; margin-bottom: 6px;">
-            📅 Знакомы с навыком (общий стаж)
-          </label>
-          <input
-            type="number"
-            id="total-years-input"
-            class="search-input"
-            placeholder="Например: 5"
-            min="0" max="80" step="0.5"
-            value="0"
-            style="text-align: center; font-size: 20px;"
-            oninput="SkillDetailPage.validateYears()"
-          >
-          <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; text-align: center;">
-            Сколько лет назад впервые столкнулись
+        <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 10px;">
+          Сколько дней практики?
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <button id="days-tab-schedule" class="btn btn-secondary btn-sm" type="button" onclick="SkillDetailPage.selectDaysMode('schedule')">По графику</button>
+          <button id="days-tab-frequency" class="btn btn-primary btn-sm" type="button" onclick="SkillDetailPage.selectDaysMode('frequency')">По частоте</button>
+          <button id="days-tab-days" class="btn btn-secondary btn-sm" type="button" onclick="SkillDetailPage.selectDaysMode('days')">В днях</button>
+        </div>
+
+        <input type="hidden" id="days-mode" value="frequency">
+
+        <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+          <select id="days-period-unit" class="search-input" onchange="SkillDetailPage.populatePeriodValues(); SkillDetailPage.updateDaysUi();" style="flex: 1;">
+            <option value="years" selected>Годы</option>
+            <option value="months">Месяцы</option>
+          </select>
+          <select id="days-period-value" class="search-input" onchange="SkillDetailPage.updateDaysUi()" style="flex: 1;"></select>
+        </div>
+
+        <div id="days-schedule-wrap" style="display:none; margin-bottom: 10px;">
+          <select id="days-schedule" class="search-input" onchange="SkillDetailPage.updateDaysUi()">
+            <option value="five_two">5 через 2</option>
+            <option value="two_one">2 через 1</option>
+            <option value="six_one">6 через 1</option>
+            <option value="two_two">2 через 2</option>
+            <option value="one_one">1 через 1</option>
+            <option value="custom">Свой график</option>
+          </select>
+          <div id="days-custom-wrap" style="display:none; margin-top: 8px; gap: 8px;">
+            <div style="display:flex; gap:8px;">
+              <input id="days-custom-work" type="number" class="search-input" min="1" max="30" value="5" placeholder="Рабочих дней" oninput="SkillDetailPage.updateDaysUi()">
+              <input id="days-custom-rest" type="number" class="search-input" min="0" max="30" value="2" placeholder="Выходных дней" oninput="SkillDetailPage.updateDaysUi()">
+            </div>
           </div>
         </div>
 
-        <!-- Реальный опыт -->
-        <div style="margin-bottom: 16px;">
-          <label style="font-size: 13px; color: var(--text-secondary); display: block; margin-bottom: 6px;">
-            💪 Реально практиковали (активный опыт)
-          </label>
-          <input
-            type="number"
-            id="active-years-input"
-            class="search-input"
-            placeholder="Например: 2"
-            min="0" max="80" step="0.5"
-            value="0"
-            style="text-align: center; font-size: 20px;"
-            oninput="SkillDetailPage.validateYears()"
-          >
-          <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; text-align: center;">
-            Сколько лет реально работали/практиковали (без перерывов)
-          </div>
+        <div id="days-frequency-wrap" style="margin-bottom: 10px;">
+          <select id="days-frequency" class="search-input" onchange="SkillDetailPage.updateDaysUi()">
+            <option value="rarely">Редко (1 раз в неделю)</option>
+            <option value="couple_week">Пару раз в неделю</option>
+            <option value="several_week" selected>Несколько раз в неделю</option>
+            <option value="daily">Каждый день</option>
+          </select>
         </div>
 
-        <!-- Быстрый выбор -->
-        <div style="margin-bottom: 8px; font-size: 12px; color: var(--text-secondary);">
-          Быстрый выбор (общий / активный):
-        </div>
-        <div style="display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; justify-content: center;">
-          <button class="btn btn-secondary btn-sm" onclick="SkillDetailPage.setYears(0, 0)">Новичок</button>
-          <button class="btn btn-secondary btn-sm" onclick="SkillDetailPage.setYears(1, 0.5)">1 / 0.5</button>
-          <button class="btn btn-secondary btn-sm" onclick="SkillDetailPage.setYears(2, 1)">2 / 1</button>
-          <button class="btn btn-secondary btn-sm" onclick="SkillDetailPage.setYears(3, 2)">3 / 2</button>
-          <button class="btn btn-secondary btn-sm" onclick="SkillDetailPage.setYears(5, 3)">5 / 3</button>
-          <button class="btn btn-secondary btn-sm" onclick="SkillDetailPage.setYears(10, 5)">10 / 5</button>
-          <button class="btn btn-secondary btn-sm" onclick="SkillDetailPage.setYears(15, 10)">15 / 10</button>
-          <button class="btn btn-secondary btn-sm" onclick="SkillDetailPage.setYears(20, 15)">20 / 15</button>
+        <div id="days-direct-wrap" style="display:none; margin-bottom: 10px;">
+          <input id="days-direct-input" type="number" class="search-input" min="0" max="20000" value="0" oninput="SkillDetailPage.updateDaysUi()" placeholder="Например: 120">
         </div>
 
-        <!-- Ошибка валидации -->
-        <div id="years-error" style="
-          color: var(--rank-s);
-          font-size: 13px;
-          text-align: center;
-          margin-bottom: 12px;
-          display: none;
-        "></div>
+        <div id="days-preview" style="font-size: 13px; color: var(--text-secondary); text-align: center; margin: 8px 0 14px;">
+          ≈ 0 дней практики · Стартовый ранг: F
+        </div>
 
         <button
           class="btn btn-primary btn-full"
@@ -1014,47 +1065,51 @@ const SkillDetailPage = (() => {
     `;
 
     App.showModal('Добавить навык', html);
+    setTimeout(() => {
+      SkillDetailPage.populatePeriodValues();
+      SkillDetailPage.selectDaysMode('frequency');
+      SkillDetailPage.updateDaysUi();
+    }, 0);
   }
 
-
-  function setYears(total, active) {
-    document.getElementById('total-years-input').value = total;
-    document.getElementById('active-years-input').value = active;
-    validateYears();
-  }
-
-
-  function validateYears() {
-    const total = parseFloat(document.getElementById('total-years-input').value) || 0;
-    const active = parseFloat(document.getElementById('active-years-input').value) || 0;
-    const errorEl = document.getElementById('years-error');
-    const btnEl = document.getElementById('add-skill-btn');
-
-    if (active > total) {
-      errorEl.textContent = 'Активный опыт не может быть больше общего стажа';
-      errorEl.style.display = 'block';
-      btnEl.disabled = true;
-    } else {
-      errorEl.style.display = 'none';
-      btnEl.disabled = false;
+  function populatePeriodValues() {
+    const unit = document.getElementById('days-period-unit')?.value || 'years';
+    const select = document.getElementById('days-period-value');
+    if (!select) return;
+    const max = unit === 'years' ? 30 : 12;
+    const prev = parseInt(select.value || '1', 10);
+    let options = '';
+    for (let i = 1; i <= max; i++) {
+      options += `<option value="${i}">${i}</option>`;
     }
+    select.innerHTML = options;
+    select.value = String(Math.min(Math.max(1, prev), max));
   }
 
+  function selectDaysMode(mode) {
+    const modeInput = document.getElementById('days-mode');
+    if (modeInput) modeInput.value = mode;
+    const pairs = [
+      ['days-tab-schedule', mode === 'schedule'],
+      ['days-tab-frequency', mode === 'frequency'],
+      ['days-tab-days', mode === 'days']
+    ];
+    pairs.forEach(([id, active]) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.toggle('btn-primary', active);
+      el.classList.toggle('btn-secondary', !active);
+    });
+    updateDaysUi();
+  }
 
   /**
    * Добавить навык
    */
-    async function addSkill(skillId) {
-    const totalYears = parseFloat(document.getElementById('total-years-input')?.value) || 0;
-    const activeYears = parseFloat(document.getElementById('active-years-input')?.value) || 0;
-
-    if (activeYears > totalYears) {
-      App.showToast('Активный опыт не может быть больше общего', '❌');
-      return;
-    }
-
+  async function addSkill(skillId) {
+    const initialDays = computeInitialDaysFromForm();
     try {
-      const result = await API.addSkill(skillId, totalYears, activeYears);
+      const result = await API.addSkill(skillId, initialDays);
 
       App.hideModal();
       App.showToast(result.message, '🌱');
@@ -1128,8 +1183,9 @@ const SkillDetailPage = (() => {
     addSkill,
     confirmDelete,
     deleteSkill,
-    setYears,
-    validateYears
+    populatePeriodValues,
+    selectDaysMode,
+    updateDaysUi
   };
 
 })();

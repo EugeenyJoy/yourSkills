@@ -93,8 +93,8 @@ function formatEvent(row) {
       case 'new_skill':
         base.icon = data.categoryIcon || '🌱';
         base.title = `Новый навык: ${data.skill || '???'}`;
-        base.text = data.activeYears > 0
-          ? `${data.activeYears} лет реального опыта`
+        base.text = data.initialDays > 0
+          ? `Старт: ${data.initialDays} дней практики`
           : 'Начало пути';
         base.accent = 'green';
         break;

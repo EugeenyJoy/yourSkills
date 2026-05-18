@@ -417,7 +417,6 @@ const Card = (() => {
   function renderSkillItem(skill, isOwn) {
     const rank = (skill.rank || 'F').replace('+', '').toLowerCase();
     const days = skill.days || 0;
-    const activeYears = skill.activeYears || 0;
 
     return `
       <div
@@ -430,10 +429,6 @@ const Card = (() => {
           <div class="skill-name">${escapeHtml(skill.name)}</div>
           <div class="skill-meta">
             ${App.formatNumber(days)} ${pluralDays(days)}
-            ${activeYears > 0
-              ? ` · ${activeYears} ${pluralYears(activeYears)}`
-              : ''
-            }
           </div>
           ${skill.streak > 0
             ? `<div class="skill-streak">🔥 ${skill.streak} ${pluralDays(skill.streak)}</div>`

@@ -67,7 +67,7 @@ function formatSkillRow(s) {
     plus: rank.endsWith('+'),
     title: getTitleByRank(base),
     days: s.days || 0,
-    activeYears: s.active_years || 0,
+    initialDays: s.initial_days || 0,
     streak: s.current_streak || 0,
     bestStreak: s.best_streak || 0,
     categoryIcon: s.category_icon,

@@ -197,13 +197,12 @@ const API = (() => {
     return request(`/skills/search?q=${encodeURIComponent(query)}`);
   }
 
-  async function addSkill(skillId, totalYears, activeYears) {
+  async function addSkill(skillId, initialDays) {
     const result = await request('/skills/add', {
       method: 'POST',
       body: {
         skillId: parseInt(skillId),
-        totalYears: parseFloat(totalYears) || 0,
-        activeYears: parseFloat(activeYears) || 0
+        initial_days: Math.max(0, Math.floor(Number(initialDays) || 0))
       }
     });
     clearCache('/profile');
@@ -211,10 +210,10 @@ const API = (() => {
     return result;
   }
 
-  async function updateSkill(skillId, totalYears, activeYears) {
+  async function updateSkill(skillId, initialDays) {
     const result = await request(`/skills/${skillId}`, {
       method: 'PUT',
-      body: { totalYears, activeYears }
+      body: { initial_days: Math.max(0, Math.floor(Number(initialDays) || 0)) }
     });
     clearCache('/profile');
     return result;

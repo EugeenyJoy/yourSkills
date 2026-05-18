@@ -71,7 +71,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     skill_id INTEGER NOT NULL,
-    active_years REAL DEFAULT 0,
+    initial_days INTEGER NOT NULL DEFAULT 0,
     rank TEXT DEFAULT 'F',
     current_streak INTEGER DEFAULT 0,
     best_streak INTEGER DEFAULT 0,
@@ -173,6 +173,74 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_feed_created ON feed_events(created_at);
   CREATE INDEX IF NOT EXISTS idx_user_achievements_user ON user_achievements(user_id);
 `);
+
+function getTableColumns(tableName) {
+  return db.prepare(`PRAGMA table_info(${tableName})`).all().map(r => r.name);
+}
+
+function rebuildUserSkillsWithoutLegacyYears() {
+  db.exec('BEGIN');
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS user_skills_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        skill_id INTEGER NOT NULL,
+        initial_days INTEGER NOT NULL DEFAULT 0,
+        rank TEXT DEFAULT 'F',
+        current_streak INTEGER DEFAULT 0,
+        best_streak INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, skill_id),
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (skill_id) REFERENCES skills(id)
+      );
+    `);
+
+    db.exec(`
+      INSERT INTO user_skills_new (
+        id, user_id, skill_id, initial_days, rank, current_streak, best_streak, created_at
+      )
+      SELECT
+        id,
+        user_id,
+        skill_id,
+        COALESCE(initial_days, 0),
+        COALESCE(rank, 'F'),
+        COALESCE(current_streak, 0),
+        COALESCE(best_streak, 0),
+        created_at
+      FROM user_skills;
+    `);
+
+    db.exec('DROP TABLE user_skills;');
+    db.exec('ALTER TABLE user_skills_new RENAME TO user_skills;');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_user_skills_user ON user_skills(user_id);');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_user_skills_skill ON user_skills(skill_id);');
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+// Миграция legacy-полей стажа -> initial_days
+{
+  const cols = getTableColumns('user_skills');
+  const hasInitialDays = cols.includes('initial_days');
+  if (!hasInitialDays) {
+    db.exec('ALTER TABLE user_skills ADD COLUMN initial_days INTEGER NOT NULL DEFAULT 0;');
+    if (cols.includes('active_years')) {
+      // Сохраняем старый смысл как приближённый старт по дням
+      db.exec('UPDATE user_skills SET initial_days = CAST(ROUND(COALESCE(active_years, 0) * 365.0) AS INTEGER);');
+    }
+  }
+
+  const colsAfter = getTableColumns('user_skills');
+  if (colsAfter.includes('active_years') || colsAfter.includes('years_known') || colsAfter.includes('years_practiced')) {
+    rebuildUserSkillsWithoutLegacyYears();
+  }
+}
 
 // Мета-приложения (одноразовые миграции)
 db.exec(`
