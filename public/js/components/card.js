@@ -104,6 +104,7 @@ const Card = (() => {
         </div>
 
         <div class="profile-card-expanded-ui">
+          <div class="expanded-hero-handle" onclick="Card.toggleCardExpanded('${String(user.id || 'me').replace(/[^a-zA-Z0-9_-]/g, '')}')"></div>
           <div class="expanded-top-row">
             <div class="expanded-role-pills">${renderExpandedRolePills(user.badges)}</div>
           </div>
@@ -122,7 +123,6 @@ const Card = (() => {
                 <span class="rank-stars">${rankStars(user.overallRank || 'E')}</span>
               </div>
             </div>
-            <div class="expanded-hero-handle" onclick="Card.toggleCardExpanded('${String(user.id || 'me').replace(/[^a-zA-Z0-9_-]/g, '')}')"></div>
           </div>
 
           ${user.showProfileText && user.profileText
@@ -131,7 +131,7 @@ const Card = (() => {
           }
 
           ${renderExpandedProgress(user, skills)}
-          ${renderExpandedSkillCards(skills)}
+          ${renderExpandedSkillCards(extractSkillClasses(categories))}
           ${renderExpandedStats(stats, social)}
           ${renderExpandedActions(user, social)}
         </div>
@@ -291,8 +291,9 @@ const Card = (() => {
     return '★'.repeat(n) + '☆'.repeat(5 - n);
   }
 
-  function renderExpandedSkillCards(skills = []) {
-    const list = (skills || []).slice(0, 6);
+  function renderExpandedSkillCards(skillClasses = []) {
+    const list = (skillClasses || []).slice(0, 6);
+    console.log("skillClasses", skillClasses);
     if (list.length === 0) return '';
     return `
       <div class="expanded-skill-grid">
@@ -301,8 +302,8 @@ const Card = (() => {
           return `
             <div class="expanded-skill-card rank-${base}">
               <div class="icon">${s.categoryIcon || s.icon || '📌'}</div>
-              <div class="name">${escapeHtml(s.name || 'Навык')}</div>
-              <div class="stars">${rankStars(s.rank)}</div>
+              <div class="name">${escapeHtml(s.skillName || 'Навык')}</div>
+              <div class="stars">${s.rank} ${rankStars(s.rank)}</div>
             </div>
           `;
         }).join('')}
