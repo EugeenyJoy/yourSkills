@@ -205,7 +205,7 @@ function buildProfile(userId, viewerId) {
   };
 
   if (ownProfile) {
-    const ownerBadges = badgeLib.getUserBadgesForApi(userId, { includeVisibility: true });
+    const ownerBadges = badgeLib.getUserBadgesForApi(userId, { includeVisibility: true, includeHidden: true });
     userPayload.badgesAll = ownerBadges.map(mapBadgeToClient);
   }
 

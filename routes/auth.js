@@ -180,7 +180,7 @@ router.post('/login', (req, res) => {
     }
 
     // Возвращаем visibility, чтобы клиент корректно скрывал бейджи на карточке
-    const badgeDetails = badgeLib.getUserBadgesForApi(user.id, { includeVisibility: true });
+    const badgeDetails = badgeLib.getUserBadgesForApi(user.id, { includeVisibility: true, includeHidden: true });
     const badgeKeys = [...new Set(badgeLib.getVisibleUserBadgeKeys(user.id))];
 
     const totalCheckins = db.prepare(

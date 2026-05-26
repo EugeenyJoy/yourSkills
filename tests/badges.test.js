@@ -70,10 +70,25 @@ function testOrder() {
   assert.deepStrictEqual(keys, ['creator', 'early_adopter']);
 }
 
+function testApiFiltersHiddenBadgesByDefault() {
+  const db = freshDb();
+  badgeStorage.grantBadge(db, 1, 'creator', 'system');
+  badgeStorage.grantBadge(db, 1, 'verified', 'system');
+  badgeStorage.setBadgeVisibility(db, 1, 'verified', false);
+
+  const publicBadges = badgeStorage.getUserBadgesForApi(db, 1);
+  assert.deepStrictEqual(publicBadges.map(b => b.code), ['creator']);
+
+  const ownerBadges = badgeStorage.getUserBadgesForApi(db, 1, { includeVisibility: true, includeHidden: true });
+  assert.deepStrictEqual(ownerBadges.map(b => b.code), ['creator', 'verified']);
+  assert.strictEqual(ownerBadges[1].visible, false);
+}
+
 testGrantHappyPath();
 testGrantDuplicate();
 testRevoke();
 testInvalidKey();
 testOrder();
+testApiFiltersHiddenBadgesByDefault();
 
 console.log('OK: tests/badges.test.js');
